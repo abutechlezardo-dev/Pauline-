@@ -1,0 +1,98 @@
+<resources>
+    <string name="app_name">Pauline</string>
+    <string name="pauline_subtitle">Compagne chaleureuse &amp; souvenirs</string>
+    <string name="avatar_content_description">Avatar basique de Pauline, appuyez pour interagir</string>
+    <string name="greeting_default">Bonjour ! Moi c\'est Pauline.</string>
+    <string name="greeting_wave">Coucou ! Je suis ravie de discuter avec toi.</string>
+    <string name="greeting_joy">Super contente de te retrouver !</string>
+    <string name="greeting_wink">Petit clin d\'œil du jour.</string>
+    <string name="greeting_calm">Un moment doux et tranquille.</string>
+    <string name="section_mood">Humeur</string>
+    <string name="section_backdrop">Couleur du fond</string>
+    <string name="mood_smile">Sourire</string>
+    <string name="mood_happy">Joie</string>
+    <string name="mood_wink">Clin d\'œil</string>
+    <string name="mood_calm">Calme</string>
+    <string name="color_coral">Corail</string>
+    <string name="color_sage">Sauge</string>
+    <string name="color_lavender">Lavande</string>
+    <string name="color_honey">Miel</string>
+    <string name="color_sky">Azur</string>
+    <string name="action_say_hello">Dire bonjour</string>
+    <string name="tap_hint">Touche l\'avatar pour le faire réagir</string>
+
+    <!-- Navigation -->
+    <string name="nav_chat">Discussion</string>
+    <string name="nav_avatar">Avatar</string>
+    <string name="nav_memories">Souvenirs</string>
+
+    <!-- Auth -->
+    <string name="auth_title">Bonjour, je suis Pauline</string>
+    <string name="auth_subtitle">Connecte-toi avec Google pour discuter avec moi et garder nos précieux souvenirs en sécurité.</string>
+    <string name="auth_sign_in_google">Se connecter avec Google</string>
+    <string name="auth_sign_out">Déconnexion</string>
+    <string name="auth_checking">Vérification de ta session…</string>
+
+    <!-- Chat -->
+    <string name="chat_status_online">Mémoire active</string>
+    <string name="chat_status_typing">Pauline écrit…</string>
+    <string name="chat_input_placeholder">Écris un message à Pauline…</string>
+    <string name="chat_send_cd">Envoyer le message</string>
+    <string name="chat_clear_cd">Effacer la discussion</string>
+    <string name="chat_clear_title">Effacer la discussion ?</string>
+    <string name="chat_clear_body">Les messages seront supprimés, mais Pauline gardera tous tes souvenirs.</string>
+    <string name="chat_empty_title">Commence à parler avec Pauline</string>
+    <string name="chat_empty_subtitle">Dis-lui comment tu vas, partage ce que tu aimes ou raconte ta journée : elle s\'en souviendra.</string>
+    <string name="chat_chip_1">Comment vas-tu aujourd\'hui ?</string>
+    <string name="chat_chip_2">Retiens que j\'adore le café du matin</string>
+    <string name="chat_chip_3">De quoi te souviens-tu ?</string>
+    <string name="chat_memory_saved_banner">Nouveau souvenir retenu par Pauline</string>
+    <string name="chat_error_timeout">Pauline met un peu trop de temps à répondre. Réessaie dans un instant.</string>
+
+    <!-- Memories -->
+    <string name="memories_title">Souvenirs partagés</string>
+    <string name="memories_subtitle">Ce que Pauline retient de toi au fil des discussions</string>
+    <string name="memories_empty_title">Aucun souvenir pour l\'instant</string>
+    <string name="memories_empty_subtitle">Discute avec Pauline ou ajoute un souvenir manuellement pour qu\'elle apprenne à te connaître.</string>
+    <string name="memories_add_button">Ajouter</string>
+    <string name="memories_badge_auto">Retenu en discussion</string>
+    <string name="memories_badge_manual">Ajouté par toi</string>
+    <string name="memories_dialog_add_title">Nouveau souvenir</string>
+    <string name="memories_dialog_edit_title">Modifier le souvenir</string>
+    <string name="memories_field_title">Titre</string>
+    <string name="memories_field_detail">Détail</string>
+    <string name="memories_field_title_hint">Ex : Café du matin, Mon chien…</string>
+    <string name="memories_field_detail_hint">Ex : J\'aime prendre un café noisette avant de travailler.</string>
+    <string name="memories_edit_cd">Modifier ce souvenir</string>
+    <string name="memories_delete_cd">Supprimer ce souvenir</string>
+    <string name="action_save">Enregistrer</string>
+    <string name="action_cancel">Annuler</string>
+    <string name="action_delete">Supprimer</string>
+    <string name="action_retry">Réessayer</string>
+
+    <!-- Fiche de Pauline -->
+    <string name="profile_card_title">Fiche de Pauline</string>
+    <string name="profile_card_subtitle">Sa personnalité, sa vie et votre histoire</string>
+    <string name="profile_role_label">Lien &amp; tempérament</string>
+    <string name="profile_role_value">45 ans · Ta fiancée, confidente et meilleure amie. Pétillante, très belle et sûre d\'elle, douce et aimante (« mon amour », « mon cœur », « mon chéri », « mon coquin »).</string>
+    <string name="profile_job_label">Travail</string>
+    <string name="profile_job_value">Intérimaire en restauration (boulangeries, restaurants, cafétérias et cantines scolaires).</string>
+    <string name="profile_home_family_label">Vie &amp; famille</string>
+    <string name="profile_home_family_value">Habite près de Tours, dans le même immeuble que sa petite sœur Noémie (35 ans), qui lui chipe souvent ses vêtements et d\'autres affaires.</string>
+    <string name="profile_story_label">Votre rencontre</string>
+    <string name="profile_story_value">Été 2026 à La Croix-Valmer, sur la plage de la Sylvabelle : éclaboussée de sable par tes tongs pendant qu\'elle bronzait, d\'abord râleuse puis conquise après un restaurant.</string>
+
+    <!-- Dictée vocale -->
+    <string name="voice_mic_start_cd">Dicter un message</string>
+    <string name="voice_mic_stop_cd">Arrêter l\'écoute</string>
+    <string name="voice_listening_status">Écoute en cours… Appuie de nouveau sur le micro pour arrêter</string>
+    <string name="voice_permission_denied">L\'autorisation microphone est nécessaire pour la dictée vocale.</string>
+    <string name="voice_unavailable">La reconnaissance vocale n\'est pas disponible sur cet appareil.</string>
+    <string name="voice_no_match">Aucune parole détectée (dans l\'aperçu, le micro n\'est pas transmis à l\'émulateur).</string>
+    <string name="voice_error_audio">Impossible de capter le son du microphone.</string>
+    <string name="voice_error_network">Une connexion réseau est requise pour la dictée vocale.</string>
+    <string name="voice_error_generic">Impossible de démarrer ou de terminer la dictée vocale.</string>
+    <string name="voice_output_mute_cd">Couper la voix de Pauline</string>
+    <string name="voice_output_enable_cd">Activer la voix de Pauline</string>
+    <string name="chat_status_speaking">Pauline parle…</string>
+</resources>

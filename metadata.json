@@ -1,0 +1,6 @@
+{
+  "name": "Pauline",
+  "description": "Une application Android simple pour Pauline avec un avatar basique interactif.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

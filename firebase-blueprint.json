@@ -1,0 +1,121 @@
+{
+  "entities": {
+    "UserAvatarPreferences": {
+      "title": "UserAvatarPreferences",
+      "description": "Stores Pauline's persisted mood and backdrop color preferences for the authenticated user.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Authenticated Firebase user UID."
+        },
+        "mood": {
+          "type": "string",
+          "enum": ["SMILE", "HAPPY", "WINK", "CALM"],
+          "description": "Selected Pauline avatar mood."
+        },
+        "backdrop": {
+          "type": "string",
+          "enum": ["CORAL", "SAGE", "LAVENDER", "HONEY", "SKY"],
+          "description": "Selected avatar backdrop color."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when preferences were created (FieldValue.serverTimestamp())."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when preferences were last updated (FieldValue.serverTimestamp())."
+        }
+      },
+      "required": ["userId", "mood", "backdrop", "createdAt", "updatedAt"]
+    },
+    "ChatMessage": {
+      "title": "ChatMessage",
+      "description": "A single message in the user's conversation with Pauline.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Authenticated Firebase user UID."
+        },
+        "sender": {
+          "type": "string",
+          "enum": ["user", "pauline"],
+          "description": "Message author: user or pauline."
+        },
+        "text": {
+          "type": "string",
+          "description": "Message body text."
+        },
+        "moodTag": {
+          "type": "string",
+          "enum": ["SMILE", "HAPPY", "WINK", "CALM"],
+          "description": "Avatar mood associated with the message."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the message was sent (FieldValue.serverTimestamp())."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the message was updated (FieldValue.serverTimestamp())."
+        }
+      },
+      "required": ["userId", "sender", "text", "createdAt", "updatedAt"]
+    },
+    "MemoryItem": {
+      "title": "MemoryItem",
+      "description": "A real persistent memory about the user remembered by Pauline across conversations.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Authenticated Firebase user UID."
+        },
+        "title": {
+          "type": "string",
+          "description": "Short memory title or topic."
+        },
+        "detail": {
+          "type": "string",
+          "description": "Detailed memory description."
+        },
+        "source": {
+          "type": "string",
+          "enum": ["auto", "manual"],
+          "description": "Whether the memory was learned in conversation or added manually."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the memory was created (FieldValue.serverTimestamp())."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the memory was last updated (FieldValue.serverTimestamp())."
+        }
+      },
+      "required": ["userId", "title", "detail", "source", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserAvatarPreferences" },
+      "description": "Per-user avatar preferences document."
+    },
+    "/users/{userId}/messages/{messageId}": {
+      "schema": { "$ref": "#/entities/ChatMessage" },
+      "description": "User-scoped conversation messages with Pauline."
+    },
+    "/users/{userId}/memories/{memoryId}": {
+      "schema": { "$ref": "#/entities/MemoryItem" },
+      "description": "User-scoped real memories remembered by Pauline."
+    }
+  }
+}
