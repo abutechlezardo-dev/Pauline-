@@ -457,7 +457,7 @@
     openModal(els.memoryModal);
   }
 
-  // ---- Speech Synthesis (French female voice + strip emojis/symbols) ----
+  // ---- Speech Synthesis (forced fr-CA priority, rate 0.92, pitch 1, strip emojis/symbols) ----
   function sanitizeTextForSpeech(rawText) {
     if (!rawText) return '';
     return rawText
@@ -468,16 +468,33 @@
       .trim();
   }
 
+  function isCanadianFrenchVoice(voice) {
+    const lang = (voice.lang || '').toLowerCase().replace('_', '-');
+    const name = (voice.name || '').toLowerCase();
+    return (
+      lang.includes('fr-ca') ||
+      name.includes('canada') ||
+      name.includes('québécois') ||
+      name.includes('quebecois') ||
+      name.includes('canadian')
+    );
+  }
+
   function scoreFrenchVoice(voice) {
-    const lang = (voice.lang || '').toLowerCase();
-    if (!lang.startsWith('fr')) return -1;
+    const lang = (voice.lang || '').toLowerCase().replace('_', '-');
+    const isCanadian = isCanadianFrenchVoice(voice);
+    if (!isCanadian && !lang.startsWith('fr')) return -1;
 
     const name = (voice.name || '').toLowerCase();
-    const isFrFr = lang === 'fr-fr' || lang.startsWith('fr_fr') || lang.startsWith('fr-fr');
+    const isFrFr = lang.startsWith('fr-fr');
     const hasFemale = FEMALE_VOICE_HINTS.some((hint) => name.includes(hint));
     const hasMale = !hasFemale && MALE_VOICE_HINTS.some((hint) => name.includes(hint));
 
-    let score = isFrFr ? 10000 : 5000;
+    let score = 0;
+    if (isCanadian) score += 100000;
+    else if (isFrFr) score += 10000;
+    else score += 5000;
+
     if (hasFemale) score += 5000;
     else if (hasMale) score -= 2000;
     else score += 1000;
@@ -490,9 +507,12 @@
   function selectBestFrenchVoice() {
     if (!('speechSynthesis' in window)) return null;
     const voices = window.speechSynthesis.getVoices() || [];
+    const canadianVoices = voices.filter(isCanadianFrenchVoice);
+    const pool = canadianVoices.length > 0 ? canadianVoices : voices;
+
     let bestVoice = null;
     let bestScore = -1;
-    voices.forEach((voice) => {
+    pool.forEach((voice) => {
       const s = scoreFrenchVoice(voice);
       if (s > bestScore) {
         bestScore = s;
@@ -583,14 +603,18 @@
     const clean = sanitizeTextForSpeech(rawText);
     if (!clean) return;
 
-    stopSpeaking();
+    window.speechSynthesis.cancel();
+    state.isSpeaking = false;
 
     const utterance = new SpeechSynthesisUtterance(clean);
-    utterance.lang = 'fr-FR';
+    utterance.rate = 0.92;
+    utterance.pitch = 1;
+    utterance.lang = 'fr-CA';
+
     const preferredVoice = selectBestFrenchVoice();
     if (preferredVoice) {
       utterance.voice = preferredVoice;
-      utterance.lang = preferredVoice.lang || 'fr-FR';
+      utterance.lang = preferredVoice.lang || 'fr-CA';
     }
 
     utterance.onstart = () => {
