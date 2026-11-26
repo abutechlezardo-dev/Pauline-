@@ -316,6 +316,17 @@
             <option value="gemini-2.5-flash">gemini-2.5-flash</option>
           </select>
 
+          <div class="voices-section">
+            <div class="voices-toolbar">
+              <span class="field-label">Voix disponibles (<span id="voices-count">0</span>)</span>
+              <div class="voices-toolbar-actions">
+                <button type="button" id="refresh-voices-btn" class="ghost-btn mini-btn">Actualiser</button>
+                <button type="button" id="copy-voices-btn" class="ghost-btn mini-btn">Copier</button>
+              </div>
+            </div>
+            <div id="voices-list-box" class="voices-list-box" aria-live="polite"></div>
+          </div>
+
           <div class="modal-actions">
             <button type="button" class="ghost-btn modal-close" data-close="settings-modal">Annuler</button>
             <button type="submit" class="primary-btn">Enregistrer</button>

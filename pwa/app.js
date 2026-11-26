@@ -124,6 +124,10 @@
     prenomInput: document.getElementById('prenom-input'),
     geminiKeyInput: document.getElementById('gemini-key-input'),
     modelSelect: document.getElementById('model-select'),
+    voicesCount: document.getElementById('voices-count'),
+    voicesListBox: document.getElementById('voices-list-box'),
+    refreshVoicesBtn: document.getElementById('refresh-voices-btn'),
+    copyVoicesBtn: document.getElementById('copy-voices-btn'),
     memoryModal: document.getElementById('memory-modal'),
     memoryModalTitle: document.getElementById('memory-modal-title'),
     memoryForm: document.getElementById('memory-form'),
@@ -496,6 +500,74 @@
       }
     });
     return bestVoice;
+  }
+
+  function logAndRenderVoices() {
+    if (!('speechSynthesis' in window)) {
+      els.voicesCount.textContent = '0';
+      els.voicesListBox.innerHTML = '';
+      const msg = document.createElement('p');
+      msg.className = 'field-hint';
+      msg.textContent = 'speechSynthesis non pris en charge par ce navigateur.';
+      els.voicesListBox.appendChild(msg);
+      return;
+    }
+
+    const voices = window.speechSynthesis.getVoices() || [];
+    const selected = selectBestFrenchVoice();
+
+    console.group('Voix speechSynthesis disponibles (' + voices.length + ')');
+    console.table(
+      voices.map((v, idx) => ({
+        index: idx + 1,
+        name: v.name,
+        lang: v.lang,
+        localService: v.localService,
+        default: v.default,
+      }))
+    );
+    voices.forEach((v, idx) => {
+      console.log((idx + 1) + '. ' + v.name + ' | lang=' + v.lang);
+    });
+    console.groupEnd();
+
+    els.voicesCount.textContent = String(voices.length);
+    els.voicesListBox.innerHTML = '';
+
+    if (voices.length === 0) {
+      const empty = document.createElement('p');
+      empty.className = 'field-hint';
+      empty.textContent = 'Aucune voix chargée pour le moment. Appuie sur Actualiser.';
+      els.voicesListBox.appendChild(empty);
+      return;
+    }
+
+    voices.forEach((voice) => {
+      const isSelected = selected && selected.name === voice.name && selected.lang === voice.lang;
+      const row = document.createElement('div');
+      row.className = 'voice-row' + (isSelected ? ' selected' : '');
+
+      const nameEl = document.createElement('span');
+      nameEl.className = 'voice-name';
+      nameEl.textContent = voice.name;
+
+      const metaEl = document.createElement('div');
+      metaEl.className = 'voice-meta';
+
+      const langEl = document.createElement('span');
+      langEl.textContent = 'lang : ' + voice.lang;
+      metaEl.appendChild(langEl);
+
+      if (isSelected) {
+        const tagEl = document.createElement('span');
+        tagEl.className = 'voice-selected-tag';
+        tagEl.textContent = 'Choisie pour Pauline';
+        metaEl.appendChild(tagEl);
+      }
+
+      row.append(nameEl, metaEl);
+      els.voicesListBox.appendChild(row);
+    });
   }
 
   function stopSpeaking() {
@@ -872,6 +944,7 @@
       !state.settings.model || OBSOLETE_MODELS.has(state.settings.model)
         ? 'gemini-3.5-flash-lite'
         : state.settings.model;
+    logAndRenderVoices();
     openModal(els.settingsModal);
   }
 
@@ -917,9 +990,30 @@
 
     if ('speechSynthesis' in window) {
       window.speechSynthesis.addEventListener('voiceschanged', () => {
-        selectBestFrenchVoice();
+        logAndRenderVoices();
       });
     }
+
+    els.refreshVoicesBtn.addEventListener('click', () => {
+      logAndRenderVoices();
+    });
+
+    els.copyVoicesBtn.addEventListener('click', async () => {
+      if (!('speechSynthesis' in window)) return;
+      const voices = window.speechSynthesis.getVoices() || [];
+      const text = voices.map((v, i) => (i + 1) + '. ' + v.name + ' (' + v.lang + ')').join('\n');
+      if (!text) return;
+      try {
+        await navigator.clipboard.writeText(text);
+        const oldLabel = els.copyVoicesBtn.textContent;
+        els.copyVoicesBtn.textContent = 'Copié !';
+        setTimeout(() => {
+          els.copyVoicesBtn.textContent = oldLabel;
+        }, 1500);
+      } catch {
+        window.prompt('Copie la liste des voix ci-dessous :', text);
+      }
+    });
 
     els.installBtn.addEventListener('click', handleInstallClick);
     els.installProfileBtn.addEventListener('click', handleInstallClick);
@@ -1048,6 +1142,7 @@
     updateSendButtonState();
     renderMessages();
     renderMemories();
+    logAndRenderVoices();
     bindEvents();
   }
 
