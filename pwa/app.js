@@ -10,9 +10,11 @@
   const DEFAULT_SETTINGS = {
     userName: '',
     apiKey: '',
-    model: 'gemini-2.5-flash-lite',
+    model: 'gemini-3.5-flash-lite',
     voiceEnabled: true,
   };
+
+  const OBSOLETE_MODELS = new Set(['gemini-2.5-flash-lite']);
 
   const FEMALE_VOICE_HINTS = [
     'female',
@@ -694,7 +696,10 @@
 
   async function callGemini(promptText, jsonMode = false) {
     const apiKey = state.settings.apiKey.trim();
-    const model = state.settings.model || 'gemini-2.5-flash-lite';
+    const model =
+      !state.settings.model || OBSOLETE_MODELS.has(state.settings.model)
+        ? 'gemini-3.5-flash-lite'
+        : state.settings.model;
     const endpoint =
       'https://generativelanguage.googleapis.com/v1beta/models/' +
       encodeURIComponent(model) +
@@ -863,7 +868,10 @@
   function openSettingsDialog() {
     els.prenomInput.value = state.settings.userName || '';
     els.geminiKeyInput.value = state.settings.apiKey || '';
-    els.modelSelect.value = state.settings.model || 'gemini-2.5-flash-lite';
+    els.modelSelect.value =
+      !state.settings.model || OBSOLETE_MODELS.has(state.settings.model)
+        ? 'gemini-3.5-flash-lite'
+        : state.settings.model;
     openModal(els.settingsModal);
   }
 
@@ -1022,7 +1030,15 @@
     setupKeyboardViewportBehavior();
   }
 
+  function migrateSettings() {
+    if (!state.settings.model || OBSOLETE_MODELS.has(state.settings.model)) {
+      state.settings.model = 'gemini-3.5-flash-lite';
+      saveJson(STORAGE_KEYS.settings, state.settings);
+    }
+  }
+
   function init() {
+    migrateSettings();
     updateInstallButtons();
     updateConnectivityBanner();
     updateApiKeyBanner();
