@@ -5,7 +5,9 @@ import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -24,6 +26,11 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.BiasAlignment
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -156,9 +163,21 @@ fun ChatScreen(
     }
   }
 
-  Column(
-    modifier = modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)
-  ) {
+  Box(modifier = modifier.fillMaxSize()) {
+    Image(
+      painter = painterResource(id = R.drawable.pauline_wallpaper),
+      contentDescription = null,
+      contentScale = ContentScale.Crop,
+      alignment = BiasAlignment(0f, -0.35f),
+      modifier = Modifier.fillMaxSize(),
+    )
+    Box(
+      modifier =
+        Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background.copy(alpha = 0.70f))
+    )
+    Column(
+      modifier = Modifier.fillMaxSize()
+    ) {
     ChatHeader(
       uiState = uiState,
       hasMessages = messages.isNotEmpty(),
@@ -435,6 +454,7 @@ fun ChatScreen(
         }
       },
     )
+    }
   }
 
   if (showClearDialog) {
@@ -474,7 +494,7 @@ private fun ChatHeader(
   onSignOut: () -> Unit,
 ) {
   Surface(
-    color = MaterialTheme.colorScheme.surface,
+    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.90f),
     tonalElevation = 2.dp,
     modifier = Modifier.fillMaxWidth(),
   ) {
@@ -568,40 +588,51 @@ private fun EmptyChatWelcome(
   val chip2 = stringResource(R.string.chat_chip_2)
   val chip3 = stringResource(R.string.chat_chip_3)
 
-  Column(
-    modifier = Modifier.fillMaxSize().padding(24.dp),
-    horizontalAlignment = Alignment.CenterHorizontally,
-    verticalArrangement = Arrangement.Center,
+  Box(
+    modifier = Modifier.fillMaxSize().padding(20.dp),
+    contentAlignment = Alignment.Center,
   ) {
-    PaulineAvatar(
-      mood = uiState.mood,
-      backdrop = uiState.backdrop,
-      waveCount = uiState.waveCount,
-      onAvatarClick = onAvatarClick,
-      modifier = Modifier.size(136.dp),
-    )
-    Spacer(modifier = Modifier.height(16.dp))
-    Text(
-      text = stringResource(R.string.chat_empty_title),
-      style = MaterialTheme.typography.titleMedium,
-      color = MaterialTheme.colorScheme.onBackground,
-      textAlign = TextAlign.Center,
-    )
-    Spacer(modifier = Modifier.height(6.dp))
-    Text(
-      text = stringResource(R.string.chat_empty_subtitle),
-      style = MaterialTheme.typography.bodyMedium,
-      color = MaterialTheme.colorScheme.onSurfaceVariant,
-      textAlign = TextAlign.Center,
-      modifier = Modifier.widthIn(max = 360.dp),
-    )
-    Spacer(modifier = Modifier.height(18.dp))
-    listOf(chip1, chip2, chip3).forEachIndexed { index, prompt ->
-      SuggestionChip(
-        onClick = { onSuggestionClick(prompt) },
-        label = { Text(prompt) },
-        modifier = Modifier.minimumInteractiveComponentSize().testTag("chat_suggestion_$index"),
-      )
+    Surface(
+      shape = RoundedCornerShape(26.dp),
+      color = MaterialTheme.colorScheme.surface.copy(alpha = 0.86f),
+      tonalElevation = 2.dp,
+      modifier = Modifier.widthIn(max = 380.dp),
+    ) {
+      Column(
+        modifier = Modifier.padding(22.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+      ) {
+        PaulineAvatar(
+          mood = uiState.mood,
+          backdrop = uiState.backdrop,
+          waveCount = uiState.waveCount,
+          onAvatarClick = onAvatarClick,
+          modifier = Modifier.size(128.dp),
+        )
+        Spacer(modifier = Modifier.height(16.dp))
+        Text(
+          text = stringResource(R.string.chat_empty_title),
+          style = MaterialTheme.typography.titleMedium,
+          color = MaterialTheme.colorScheme.onSurface,
+          textAlign = TextAlign.Center,
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+        Text(
+          text = stringResource(R.string.chat_empty_subtitle),
+          style = MaterialTheme.typography.bodyMedium,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+          textAlign = TextAlign.Center,
+        )
+        Spacer(modifier = Modifier.height(18.dp))
+        listOf(chip1, chip2, chip3).forEachIndexed { index, prompt ->
+          SuggestionChip(
+            onClick = { onSuggestionClick(prompt) },
+            label = { Text(prompt) },
+            modifier = Modifier.minimumInteractiveComponentSize().testTag("chat_suggestion_$index"),
+          )
+        }
+      }
     }
   }
 }
@@ -626,7 +657,7 @@ private fun ChatBubble(
         ),
       color =
         if (isFromPauline) {
-          MaterialTheme.colorScheme.surfaceVariant
+          MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.90f)
         } else {
           MaterialTheme.colorScheme.primary
         },
@@ -636,8 +667,16 @@ private fun ChatBubble(
       Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
         if (isFromPauline) {
           Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-              modifier = Modifier.size(8.dp).background(backdrop.primaryColor, CircleShape)
+            Image(
+              painter = painterResource(id = R.drawable.pauline_avatar),
+              contentDescription = null,
+              contentScale = ContentScale.Crop,
+              alignment = Alignment.Center,
+              modifier =
+                Modifier
+                  .size(22.dp)
+                  .clip(CircleShape)
+                  .border(1.dp, backdrop.primaryColor, CircleShape),
             )
             Spacer(modifier = Modifier.width(6.dp))
             Text(
@@ -673,7 +712,7 @@ private fun ChatInputBar(
   onSend: () -> Unit,
 ) {
   Surface(
-    color = MaterialTheme.colorScheme.surface,
+    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
     tonalElevation = 4.dp,
     modifier = Modifier.fillMaxWidth(),
   ) {

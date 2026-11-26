@@ -1,7 +1,9 @@
 package com.example.ui
 
 import androidx.annotation.StringRes
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
@@ -12,6 +14,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.Face
@@ -46,10 +50,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.credentials.CredentialManager
@@ -327,6 +334,27 @@ private fun DestinationIcon(
   selected: Boolean,
   memoriesCount: Int,
 ) {
+  if (destination == PaulineDestination.AVATAR) {
+    Image(
+      painter = painterResource(id = R.drawable.pauline_avatar),
+      contentDescription = null,
+      contentScale = ContentScale.Crop,
+      alignment = Alignment.Center,
+      modifier =
+        Modifier
+          .size(24.dp)
+          .clip(CircleShape)
+          .then(
+            if (selected) {
+              Modifier.border(2.dp, MaterialTheme.colorScheme.primary, CircleShape)
+            } else {
+              Modifier
+            }
+          ),
+    )
+    return
+  }
+
   val iconVector = if (selected) destination.selectedIcon else destination.unselectedIcon
   if (destination == PaulineDestination.MEMORIES && memoriesCount > 0) {
     BadgedBox(badge = { Badge { Text(memoriesCount.toString()) } }) {

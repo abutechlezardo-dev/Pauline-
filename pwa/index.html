@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content"
+    />
+    <title>Pauline</title>
+    <meta
+      name="description"
+      content="Pauline : ta fiancée, confidente et meilleure amie, toujours avec toi."
+    />
+
+    <!-- PWA Manifest & Theme -->
+    <link rel="manifest" href="manifest.json" />
+    <meta name="theme-color" content="#E87A5D" />
+    <meta name="mobile-web-app-capable" content="yes" />
+
+    <!-- iPhone / iOS Safari PWA Tags -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Pauline" />
+    <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png" />
+
+    <!-- Icons -->
+    <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png" />
+    <link rel="icon" type="image/png" sizes="512x512" href="icons/icon-512.png" />
+
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div id="app-shell" class="app-shell">
+      <!-- Top Header -->
+      <header class="app-header">
+        <div class="header-left">
+          <button
+            type="button"
+            id="header-avatar-btn"
+            class="avatar-ring-btn"
+            aria-label="Voir le profil de Pauline"
+          >
+            <img
+              src="assets/pauline.jpg"
+              alt="Pauline"
+              class="pauline-avatar-img"
+            />
+          </button>
+          <div class="header-titles">
+            <h1 class="app-title">Pauline</h1>
+            <p id="status-line" class="status-line">Mémoire active</p>
+          </div>
+        </div>
+
+        <div class="header-actions">
+          <button
+            type="button"
+            id="install-btn"
+            class="pill-install-btn hidden"
+            aria-label="Installer Pauline sur l'écran d'accueil"
+          >
+            <span class="install-dot" aria-hidden="true"></span>
+            <span>Installer</span>
+          </button>
+
+          <button
+            type="button"
+            id="voice-toggle-btn"
+            class="icon-btn active"
+            aria-label="Couper la voix de Pauline"
+            title="Activer ou couper la voix de Pauline"
+          >
+            <svg id="icon-volume-on" viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"
+              />
+            </svg>
+            <svg id="icon-volume-off" class="hidden" viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"
+              />
+            </svg>
+          </button>
+
+          <button
+            type="button"
+            id="clear-chat-btn"
+            class="icon-btn"
+            aria-label="Effacer la discussion"
+            title="Effacer la discussion"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M15 16h4v2h-4zm0-8h7v2h-7zm0 4h6v2h-6zM3 18c0 1.1.9 2 2 2h6c1.1 0 2-.9 2-2V8H3v10zM14 5h-3l-1-1H6L5 5H2v2h12z"
+              />
+            </svg>
+          </button>
+
+          <button
+            type="button"
+            id="settings-btn"
+            class="icon-btn"
+            aria-label="Paramètres"
+            title="Paramètres et clé Gemini"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M19.14 12.94c.04-.3.06-.61.06-.94s-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"
+              />
+            </svg>
+          </button>
+        </div>
+      </header>
+
+      <!-- Main Tab Views -->
+      <main class="main-content">
+        <!-- CHAT VIEW (with full-screen Pauline wallpaper + dark translucent overlay) -->
+        <section id="view-chat" class="view-panel chat-view active" aria-label="Discussion avec Pauline">
+          <div class="chat-wallpaper" aria-hidden="true"></div>
+          <div class="chat-scrim" aria-hidden="true"></div>
+
+          <div class="chat-inner">
+            <div id="offline-banner" class="banner banner-offline hidden">
+              Mode hors ligne : tes anciens messages et souvenirs restent accessibles.
+            </div>
+
+            <div id="api-key-banner" class="banner banner-warning hidden">
+              <span>Ajoute ta clé API Gemini dans Paramètres pour discuter avec Pauline.</span>
+              <button type="button" id="open-settings-from-banner" class="banner-action-btn">
+                Configurer
+              </button>
+            </div>
+
+            <div id="memory-notice" class="banner banner-memory hidden">
+              <span id="memory-notice-text"></span>
+              <button type="button" id="dismiss-memory-notice" class="banner-close-btn" aria-label="Fermer">
+                ✕
+              </button>
+            </div>
+
+            <div id="chat-messages" class="chat-messages" role="log" aria-live="polite">
+              <!-- Messages or welcome state injected by app.js -->
+            </div>
+
+            <div id="voice-status-banner" class="banner banner-listening hidden">
+              <span class="pulse-dot" aria-hidden="true"></span>
+              <span>Écoute en français… Appuie de nouveau sur le micro pour arrêter</span>
+            </div>
+
+            <div id="error-banner" class="banner banner-error hidden">
+              <span id="error-banner-text"></span>
+              <button type="button" id="dismiss-error-btn" class="banner-close-btn" aria-label="Fermer">
+                ✕
+              </button>
+            </div>
+
+            <form id="chat-form" class="chat-input-bar" autocomplete="off">
+              <textarea
+                id="chat-input"
+                class="chat-input"
+                rows="1"
+                placeholder="Écris un message à Pauline…"
+                aria-label="Message pour Pauline"
+              ></textarea>
+
+              <button
+                type="button"
+                id="mic-btn"
+                class="circle-action-btn mic-btn"
+                aria-label="Dicter un message"
+                title="Dicter un message"
+              >
+                <svg id="icon-mic" viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z"
+                  />
+                </svg>
+                <svg id="icon-stop" class="hidden" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M6 6h12v12H6z" />
+                </svg>
+              </button>
+
+              <button
+                type="submit"
+                id="send-btn"
+                class="circle-action-btn send-btn"
+                aria-label="Envoyer le message"
+                disabled
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
+                </svg>
+              </button>
+            </form>
+          </div>
+        </section>
+
+        <!-- PROFILE VIEW -->
+        <section id="view-profile" class="view-panel secondary-view" aria-label="Profil de Pauline">
+          <div class="scroll-container">
+            <div class="profile-hero-card">
+              <div class="profile-avatar-frame">
+                <img
+                  src="assets/pauline.jpg"
+                  alt="Portrait de Pauline"
+                  class="pauline-avatar-img"
+                />
+              </div>
+              <h2>Pauline</h2>
+              <p class="subtitle">45 ans · Ta fiancée, confidente et meilleure amie</p>
+              <button type="button" id="install-profile-btn" class="primary-btn hidden">
+                Ajouter Pauline à l'écran d'accueil
+              </button>
+            </div>
+
+            <div class="info-card">
+              <h3>Fiche de Pauline</h3>
+              <div class="info-item">
+                <strong>Lien &amp; tempérament</strong>
+                <p>
+                  Pétillante, très belle et sûre d'elle, douce et amoureuse. Elle te donne de tendres surnoms comme « mon amour », « mon cœur », « mon chéri » ou « mon coquin ».
+                </p>
+              </div>
+              <div class="info-item">
+                <strong>Travail</strong>
+                <p>
+                  Intérimaire en restauration sans emploi fixe : elle passe d'une boulangerie à un restaurant, une cafétéria ou une cantine scolaire.
+                </p>
+              </div>
+              <div class="info-item">
+                <strong>Vie &amp; famille</strong>
+                <p>
+                  Habite près de Tours, dans le même immeuble que sa petite sœur Noémie (35 ans), qui lui chipe souvent ses vêtements et d'autres affaires.
+                </p>
+              </div>
+              <div class="info-item">
+                <strong>Votre rencontre</strong>
+                <p>
+                  Été 2026 à La Croix-Valmer, sur la plage de la Sylvabelle : éclaboussée de sable par tes tongs pendant qu'elle bronzait, d'abord râleuse puis conquise après plusieurs rendez-vous et un restaurant.
+                </p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- MEMORIES VIEW -->
+        <section id="view-memories" class="view-panel secondary-view" aria-label="Souvenirs partagés">
+          <div class="scroll-container">
+            <div class="memories-header-row">
+              <div>
+                <h2>Souvenirs partagés</h2>
+                <p class="subtitle">Ce que Pauline retient de toi</p>
+              </div>
+              <button type="button" id="add-memory-btn" class="primary-btn small-btn">
+                + Ajouter
+              </button>
+            </div>
+            <div id="memories-list" class="memories-list"></div>
+          </div>
+        </section>
+      </main>
+
+      <!-- Bottom Navigation -->
+      <nav id="bottom-nav" class="bottom-nav" aria-label="Navigation principale">
+        <button type="button" class="nav-btn active" data-tab="chat">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z" />
+          </svg>
+          <span>Discussion</span>
+        </button>
+        <button type="button" class="nav-btn" data-tab="profile">
+          <img
+            src="assets/pauline.jpg"
+            alt=""
+            class="pauline-avatar-img nav-mini-avatar"
+          />
+          <span>Pauline</span>
+        </button>
+        <button type="button" class="nav-btn" data-tab="memories">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path
+              d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"
+            />
+          </svg>
+          <span>Souvenirs <span id="memories-badge" class="badge hidden">0</span></span>
+        </button>
+      </nav>
+    </div>
+
+    <!-- Settings Modal -->
+    <div id="settings-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h2 id="settings-title">Paramètres de Pauline</h2>
+          <button type="button" class="icon-btn modal-close" data-close="settings-modal" aria-label="Fermer">✕</button>
+        </div>
+        <form id="settings-form" class="modal-body">
+          <label class="field-label" for="prenom-input">Ton prénom</label>
+          <input id="prenom-input" type="text" class="field-input" placeholder="Ex : Thomas" />
+
+          <label class="field-label" for="gemini-key-input">Clé API Gemini</label>
+          <input
+            id="gemini-key-input"
+            type="password"
+            class="field-input"
+            placeholder="AIza..."
+            autocomplete="off"
+          />
+          <p class="field-hint">
+            Stockée uniquement sur cet appareil pour les réponses de Pauline en ligne.
+          </p>
+
+          <label class="field-label" for="model-select">Modèle Gemini</label>
+          <select id="model-select" class="field-input">
+            <option value="gemini-2.5-flash-lite">gemini-2.5-flash-lite (rapide &amp; léger)</option>
+            <option value="gemini-2.5-flash">gemini-2.5-flash</option>
+            <option value="gemini-3.5-flash-lite">gemini-3.5-flash-lite</option>
+          </select>
+
+          <div class="modal-actions">
+            <button type="button" class="ghost-btn modal-close" data-close="settings-modal">Annuler</button>
+            <button type="submit" class="primary-btn">Enregistrer</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Memory Modal -->
+    <div id="memory-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="memory-modal-title">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h2 id="memory-modal-title">Nouveau souvenir</h2>
+          <button type="button" class="icon-btn modal-close" data-close="memory-modal" aria-label="Fermer">✕</button>
+        </div>
+        <form id="memory-form" class="modal-body">
+          <label class="field-label" for="memory-title-input">Titre</label>
+          <input id="memory-title-input" type="text" class="field-input" maxlength="120" required placeholder="Ex : Café du matin" />
+
+          <label class="field-label" for="memory-detail-input">Détail</label>
+          <textarea id="memory-detail-input" class="field-input" rows="3" maxlength="1000" required placeholder="Ex : Tu adores ton café serré sans sucre."></textarea>
+
+          <div class="modal-actions">
+            <button type="button" class="ghost-btn modal-close" data-close="memory-modal">Annuler</button>
+            <button type="submit" class="primary-btn">Enregistrer</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- iPhone / Manual Install Modal -->
+    <div id="install-guide-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="install-guide-title">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h2 id="install-guide-title">Ajouter Pauline à l'écran d'accueil</h2>
+          <button type="button" class="icon-btn modal-close" data-close="install-guide-modal" aria-label="Fermer">✕</button>
+        </div>
+        <div class="modal-body">
+          <div class="install-preview-row">
+            <img src="icons/icon-192.png" alt="Icône Pauline" class="install-preview-icon" />
+            <div>
+              <strong>Pauline</strong>
+              <p class="subtitle">Application web autonome (PWA)</p>
+            </div>
+          </div>
+          <p id="install-guide-text" class="guide-steps"></p>
+          <div class="modal-actions">
+            <button type="button" class="primary-btn modal-close" data-close="install-guide-modal">Compris</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script src="app.js" defer></script>
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('./sw.js').catch((err) => {
+            console.warn('Service Worker non enregistré :', err);
+          });
+        });
+      }
+    </script>
+  </body>
+</html>
