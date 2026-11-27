@@ -18,24 +18,30 @@
 
   const OBSOLETE_MODELS = new Set(['gemini-2.5-flash-lite']);
   const PIPER_VOICE_ID = 'fr_FR-siwis-medium';
+  const PIPER_MODEL_URL =
+    'https://huggingface.co/rhasspy/piper-voices/resolve/main/fr/fr_FR/siwis/medium/fr_FR-siwis-medium.onnx?download=true';
+  const PIPER_CONFIG_URL =
+    'https://huggingface.co/rhasspy/piper-voices/resolve/main/fr/fr_FR/siwis/medium/fr_FR-siwis-medium.onnx.json?download=true';
+  const PIPER_OPFS_DIR = 'piper';
+  const PIPER_MODEL_FILENAME = PIPER_VOICE_ID + '.onnx';
+  const PIPER_CONFIG_FILENAME = PIPER_VOICE_ID + '.onnx.json';
   const ORT_VERSION = '1.20.1';
   const ORT_DIST_BASE = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@' + ORT_VERSION + '/dist/';
   const ORT_ESM_URL = ORT_DIST_BASE + 'ort.wasm.min.mjs';
   const PIPER_WASM_VERSION = '1.0.0';
   const PIPER_WASM_BASE =
     'https://cdn.jsdelivr.net/npm/@diffusionstudio/piper-wasm@' + PIPER_WASM_VERSION + '/build/';
+  const PIPER_PHONEMIZE_ESM_URLS = [
+    'https://cdn.jsdelivr.net/npm/@diffusionstudio/piper-wasm@' + PIPER_WASM_VERSION + '/+esm',
+    PIPER_WASM_BASE + 'piper_phonemize.js',
+  ];
   const PIPER_PHONEMIZE_WASM = PIPER_WASM_BASE + 'piper_phonemize.wasm';
   const PIPER_PHONEMIZE_DATA = PIPER_WASM_BASE + 'piper_phonemize.data';
-  const PIPER_ESM_URLS = [
-    'https://cdn.jsdelivr.net/npm/@mintplex-labs/piper-tts-web@1.0.5/dist/index.js',
-    'https://cdn.jsdelivr.net/npm/@mintplex-labs/piper-tts-web@1.0.5/+esm',
-    'https://cdn.jsdelivr.net/npm/@mintplex-labs/piper-tts-web@1.0.4/+esm',
-    'https://cdn.jsdelivr.net/npm/@diffusionstudio/vits-web@1.0.3/+esm',
-  ];
   const PIPER_RUNTIME_ASSETS = [
     { url: ORT_ESM_URL, kind: 'js' },
     { url: ORT_DIST_BASE + 'ort-wasm-simd-threaded.mjs', kind: 'js' },
     { url: ORT_DIST_BASE + 'ort-wasm-simd-threaded.wasm', kind: 'wasm' },
+    { url: PIPER_PHONEMIZE_ESM_URLS[0], kind: 'js' },
     { url: PIPER_PHONEMIZE_WASM, kind: 'wasm' },
     { url: PIPER_PHONEMIZE_DATA, kind: 'data' },
   ];
@@ -115,12 +121,13 @@
       stepLabel: '',
       message: '',
       lastError: '',
-      module: null,
-      modulePromise: null,
+      phonemizerFactory: null,
+      phonemizerPromise: null,
       ortModule: null,
       ortPromise: null,
-      session: null,
-      sessionPromise: null,
+      ortSession: null,
+      ortSessionPromise: null,
+      modelConfig: null,
       runtimeReady: false,
       verified: false,
     },
@@ -657,13 +664,25 @@
     );
   }
 
+  function resolveOrtNamespace(candidate) {
+    if (!candidate) return null;
+    if (candidate.InferenceSession && candidate.Tensor && candidate.env && candidate.env.wasm) {
+      return candidate;
+    }
+    if (
+      candidate.default &&
+      candidate.default.InferenceSession &&
+      candidate.default.Tensor &&
+      candidate.default.env &&
+      candidate.default.env.wasm
+    ) {
+      return candidate.default;
+    }
+    return null;
+  }
+
   function applyOnnxSingleThreadConfig(ortCandidate) {
-    const ort =
-      ortCandidate && ortCandidate.env
-        ? ortCandidate
-        : ortCandidate && ortCandidate.default && ortCandidate.default.env
-          ? ortCandidate.default
-          : null;
+    const ort = resolveOrtNamespace(ortCandidate);
     if (!ort || !ort.env || !ort.env.wasm) return false;
     ort.env.wasm.numThreads = 1;
     ort.env.wasm.simd = true;
@@ -674,6 +693,9 @@
 
   function formatPiperError(err) {
     const raw = (err && (err.message || String(err))) || 'Erreur inconnue.';
+    if (/getValue is not a function/i.test(raw)) {
+      return 'Incompatibilité interne ONNX/WASM (' + raw + '). Réessaie ou vide le cache de l’appli.';
+    }
     if (/magic word|CompileError|WebAssembly\.instantiate/i.test(raw)) {
       return 'Binaire WASM invalide ou bloqué (' + raw + ').';
     }
@@ -686,6 +708,12 @@
     return raw;
   }
 
+  function wrapPiperStageError(stageLabel, err) {
+    const raw = (err && (err.message || String(err))) || 'Erreur inconnue.';
+    if (raw.startsWith('[')) return err instanceof Error ? err : new Error(raw);
+    return new Error('[' + stageLabel + '] ' + raw);
+  }
+
   async function ensureOnnxRuntimeConfigured() {
     if (state.piper.ortModule) {
       applyOnnxSingleThreadConfig(state.piper.ortModule);
@@ -695,15 +723,16 @@
 
     state.piper.ortPromise = (async () => {
       try {
-        const ort = await import(ORT_ESM_URL);
-        if (!applyOnnxSingleThreadConfig(ort)) {
-          throw new Error('ONNX Runtime Web (' + ORT_VERSION + ') chargé sans env.wasm.');
+        const imported = await import(ORT_ESM_URL);
+        const ort = resolveOrtNamespace(imported);
+        if (!ort || !applyOnnxSingleThreadConfig(ort)) {
+          throw new Error('ONNX Runtime Web (' + ORT_VERSION + ') chargé sans API InferenceSession/Tensor.');
         }
         state.piper.ortModule = ort;
         return ort;
       } catch (err) {
         state.piper.ortPromise = null;
-        throw err;
+        throw wrapPiperStageError('ONNX Runtime ' + ORT_VERSION, err);
       }
     })();
 
@@ -713,17 +742,28 @@
   async function preloadPiperRuntimeAssets() {
     for (let i = 0; i < PIPER_RUNTIME_ASSETS.length; i += 1) {
       const asset = PIPER_RUNTIME_ASSETS[i];
-      const response = await fetch(asset.url, { mode: 'cors' });
+      let response;
+      try {
+        response = await fetch(asset.url, { mode: 'cors' });
+      } catch (fetchErr) {
+        throw wrapPiperStageError('Préchargement WASM', fetchErr);
+      }
       if (!response.ok) {
-        throw new Error('HTTP ' + response.status + ' sur ' + asset.url);
+        throw wrapPiperStageError(
+          'Préchargement WASM',
+          new Error('HTTP ' + response.status + ' sur ' + asset.url)
+        );
       }
       const contentType = (response.headers.get('content-type') || '').toLowerCase();
       if (contentType.includes('text/html')) {
-        throw new Error('Réponse HTML inattendue au lieu de ' + asset.kind + ' (' + asset.url + ')');
+        throw wrapPiperStageError(
+          'Préchargement WASM',
+          new Error('Réponse HTML inattendue au lieu de ' + asset.kind + ' (' + asset.url + ')')
+        );
       }
       const buffer = await response.arrayBuffer();
       if (!buffer || buffer.byteLength === 0) {
-        throw new Error('Fichier vide : ' + asset.url);
+        throw wrapPiperStageError('Préchargement WASM', new Error('Fichier vide : ' + asset.url));
       }
       if (asset.kind === 'wasm') {
         const header = new Uint8Array(buffer.slice(0, 4));
@@ -734,91 +774,380 @@
           header[2] === 0x73 &&
           header[3] === 0x6d;
         if (!isWasm) {
-          throw new Error('En-tête WASM invalide pour ' + asset.url);
+          throw wrapPiperStageError(
+            'Préchargement WASM',
+            new Error('En-tête WASM invalide pour ' + asset.url)
+          );
         }
       }
     }
     state.piper.runtimeReady = true;
   }
 
-  async function loadPiperModule() {
-    await ensureOnnxRuntimeConfigured();
-    if (state.piper.module) return state.piper.module;
-    if (state.piper.modulePromise) return state.piper.modulePromise;
+  async function loadPiperPhonemizerFactory() {
+    if (state.piper.phonemizerFactory) return state.piper.phonemizerFactory;
+    if (state.piper.phonemizerPromise) return state.piper.phonemizerPromise;
 
-    state.piper.modulePromise = (async () => {
+    state.piper.phonemizerPromise = (async () => {
       let lastError = null;
-      for (const url of PIPER_ESM_URLS) {
+      for (let i = 0; i < PIPER_PHONEMIZE_ESM_URLS.length; i += 1) {
+        const url = PIPER_PHONEMIZE_ESM_URLS[i];
         try {
           const mod = await import(url);
-          if (
-            mod &&
-            typeof mod.download === 'function' &&
-            (typeof mod.predict === 'function' || typeof mod.TtsSession === 'function')
-          ) {
-            if (typeof globalThis !== 'undefined' && globalThis.ort) {
-              applyOnnxSingleThreadConfig(globalThis.ort);
-            }
-            state.piper.module = mod;
-            return mod;
+          const factory =
+            (mod && typeof mod.createPiperPhonemize === 'function' && mod.createPiperPhonemize) ||
+            (mod && typeof mod.default === 'function' && mod.default) ||
+            (typeof globalThis !== 'undefined' &&
+            typeof globalThis.createPiperPhonemize === 'function'
+              ? globalThis.createPiperPhonemize
+              : null);
+          if (factory) {
+            state.piper.phonemizerFactory = factory;
+            return factory;
           }
         } catch (err) {
           lastError = err;
         }
       }
-      state.piper.modulePromise = null;
-      throw lastError || new Error('Impossible de charger le moteur Piper WASM.');
+      state.piper.phonemizerPromise = null;
+      throw wrapPiperStageError(
+        'Phonémisation WASM',
+        lastError || new Error('Factory createPiperPhonemize introuvable.')
+      );
     })();
 
-    return state.piper.modulePromise;
+    return state.piper.phonemizerPromise;
   }
 
-  async function createOrGetPiperSession(mod) {
-    await ensureOnnxRuntimeConfigured();
-    if (state.piper.session) return state.piper.session;
-    if (state.piper.sessionPromise) return state.piper.sessionPromise;
+  async function findOpfsFileHandle(dirHandle, targetName, maxDepth = 3) {
+    if (!dirHandle) return null;
+    try {
+      return await dirHandle.getFileHandle(targetName);
+    } catch {
+      // Not directly in this directory
+    }
+    if (maxDepth <= 0 || typeof dirHandle.values !== 'function') return null;
+    for await (const entry of dirHandle.values()) {
+      if (entry && entry.kind === 'directory') {
+        const nested = await findOpfsFileHandle(entry, targetName, maxDepth - 1);
+        if (nested) return nested;
+      }
+    }
+    return null;
+  }
 
-    state.piper.sessionPromise = (async () => {
-      try {
-        const sessionConfig = {
-          voiceId: PIPER_VOICE_ID,
-          allowLocalModels: true,
-          wasmPaths: {
-            onnxWasm: ORT_DIST_BASE,
-            piperWasm: PIPER_PHONEMIZE_WASM,
-            piperData: PIPER_PHONEMIZE_DATA,
-          },
-        };
+  async function findOpfsVoiceHandles() {
+    const root = await navigator.storage.getDirectory();
+    let modelHandle = null;
+    let configHandle = null;
+    try {
+      const piperDir = await root.getDirectoryHandle(PIPER_OPFS_DIR);
+      modelHandle = await findOpfsFileHandle(piperDir, PIPER_MODEL_FILENAME, 1);
+      configHandle = await findOpfsFileHandle(piperDir, PIPER_CONFIG_FILENAME, 1);
+    } catch {
+      // Directory does not exist yet
+    }
+    if (!modelHandle) {
+      modelHandle = await findOpfsFileHandle(root, PIPER_MODEL_FILENAME, 3);
+    }
+    if (!configHandle) {
+      configHandle = await findOpfsFileHandle(root, PIPER_CONFIG_FILENAME, 3);
+    }
+    return { root, modelHandle, configHandle };
+  }
 
-        let session = null;
-        if (mod.TtsSession && typeof mod.TtsSession.create === 'function') {
-          session = await mod.TtsSession.create(sessionConfig);
-        } else if (typeof mod.TtsSession === 'function') {
-          session = new mod.TtsSession(sessionConfig);
-          if (typeof session.init === 'function') {
-            await session.init();
+  async function isPiperModelStoredInOpfs() {
+    if (!isPiperBrowserSupported()) return false;
+    try {
+      const { modelHandle, configHandle } = await findOpfsVoiceHandles();
+      if (!modelHandle || !configHandle) return false;
+      const [modelFile, configFile] = await Promise.all([
+        modelHandle.getFile(),
+        configHandle.getFile(),
+      ]);
+      return Boolean(modelFile && modelFile.size > 1024 * 1024 && configFile && configFile.size > 50);
+    } catch {
+      return false;
+    }
+  }
+
+  async function readPiperAssetsFromOpfs() {
+    try {
+      const { modelHandle, configHandle } = await findOpfsVoiceHandles();
+      if (!modelHandle || !configHandle) {
+        throw new Error('Modèle ou configuration introuvable dans OPFS.');
+      }
+      const [modelFile, configFile] = await Promise.all([
+        modelHandle.getFile(),
+        configHandle.getFile(),
+      ]);
+      if (!modelFile || modelFile.size < 1024 * 1024) {
+        throw new Error('Fichier ONNX incomplet dans OPFS (' + (modelFile ? modelFile.size : 0) + ' o).');
+      }
+      const [modelBuffer, configText] = await Promise.all([
+        modelFile.arrayBuffer(),
+        configFile.text(),
+      ]);
+      const modelConfig = JSON.parse(configText);
+      if (!modelConfig || typeof modelConfig !== 'object') {
+        throw new Error('Fichier .onnx.json invalide.');
+      }
+      return {
+        modelBytes: new Uint8Array(modelBuffer),
+        modelConfig,
+      };
+    } catch (err) {
+      throw wrapPiperStageError('Stockage OPFS', err);
+    }
+  }
+
+  async function writeOpfsFile(dirHandle, filename, blobOrBytes) {
+    const fileHandle = await dirHandle.getFileHandle(filename, { create: true });
+    const writable = await fileHandle.createWritable();
+    await writable.write(blobOrBytes);
+    await writable.close();
+  }
+
+  async function removeOpfsEntrySafe(dirHandle, name) {
+    try {
+      await dirHandle.removeEntry(name);
+    } catch {
+      // Ignore missing entry
+    }
+  }
+
+  async function fetchArrayBufferWithProgress(url, onProgress) {
+    const response = await fetch(url, { mode: 'cors', redirect: 'follow' });
+    if (!response.ok) {
+      throw new Error('HTTP ' + response.status + ' lors du téléchargement (' + url + ').');
+    }
+    const total = Number(response.headers.get('content-length') || 0);
+    if (!response.body || typeof response.body.getReader !== 'function') {
+      const buffer = await response.arrayBuffer();
+      if (typeof onProgress === 'function') {
+        onProgress(buffer.byteLength, total || buffer.byteLength);
+      }
+      return buffer;
+    }
+    const reader = response.body.getReader();
+    const chunks = [];
+    let loaded = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value && value.byteLength > 0) {
+        chunks.push(value);
+        loaded += value.byteLength;
+        if (typeof onProgress === 'function') {
+          onProgress(loaded, total);
+        }
+      }
+    }
+    const merged = new Uint8Array(loaded);
+    let offset = 0;
+    for (let i = 0; i < chunks.length; i += 1) {
+      merged.set(chunks[i], offset);
+      offset += chunks[i].byteLength;
+    }
+    return merged.buffer;
+  }
+
+  function mapPhonemesArrayToIds(phonemes, phonemeIdMap) {
+    if (!Array.isArray(phonemes) || !phonemeIdMap || typeof phonemeIdMap !== 'object') {
+      return [];
+    }
+    const ids = [];
+    const bos = phonemeIdMap['^'];
+    const pad = phonemeIdMap['_'];
+    const eos = phonemeIdMap['$'];
+    if (Array.isArray(bos)) ids.push(...bos);
+    if (Array.isArray(pad)) ids.push(...pad);
+    for (let i = 0; i < phonemes.length; i += 1) {
+      const mapped = phonemeIdMap[phonemes[i]];
+      if (Array.isArray(mapped)) {
+        ids.push(...mapped);
+        if (Array.isArray(pad)) ids.push(...pad);
+      }
+    }
+    if (Array.isArray(eos)) ids.push(...eos);
+    return ids;
+  }
+
+  async function phonemizeTextForPiper(text, modelConfig) {
+    const cleanInput = String(text || '').trim();
+    if (!cleanInput) return [];
+
+    const createPhonemizer = await loadPiperPhonemizerFactory();
+    const espeakVoice =
+      (modelConfig && modelConfig.espeak && modelConfig.espeak.voice) || 'fr';
+    const collectedLines = [];
+    const collectedErrors = [];
+
+    try {
+      const phonemizer = await createPhonemizer({
+        locateFile: (path) => {
+          if (!path) return path;
+          if (path.endsWith('.wasm')) return PIPER_PHONEMIZE_WASM;
+          if (path.endsWith('.data')) return PIPER_PHONEMIZE_DATA;
+          return PIPER_WASM_BASE + path;
+        },
+        print: (line) => {
+          if (typeof line === 'string' && line.trim()) {
+            collectedLines.push(line.trim());
           }
-        } else if (typeof mod.predict === 'function') {
-          session = {
-            predict: (text) => mod.predict({ text, voiceId: PIPER_VOICE_ID }),
-          };
-        }
+        },
+        printErr: (errLine) => {
+          if (typeof errLine === 'string' && errLine.trim()) {
+            collectedErrors.push(errLine.trim());
+          }
+        },
+      });
 
-        if (!session || typeof session.predict !== 'function') {
-          throw new Error('Session Piper TtsSession introuvable dans le module chargé.');
-        }
+      const inputPayload = JSON.stringify([{ text: cleanInput }]);
+      phonemizer.callMain([
+        '-l',
+        espeakVoice,
+        '--input',
+        inputPayload,
+        '--espeak_data',
+        '/espeak-ng-data',
+      ]);
 
-        applyOnnxSingleThreadConfig(state.piper.ortModule);
-        state.piper.session = session;
-        return session;
+      const phonemeIds = [];
+      for (let i = 0; i < collectedLines.length; i += 1) {
+        const line = collectedLines[i];
+        if (!line.startsWith('{')) continue;
+        const parsed = JSON.parse(line);
+        if (Array.isArray(parsed.phoneme_ids) && parsed.phoneme_ids.length > 0) {
+          for (let j = 0; j < parsed.phoneme_ids.length; j += 1) {
+            phonemeIds.push(Number(parsed.phoneme_ids[j]));
+          }
+        } else if (Array.isArray(parsed.phonemes) && modelConfig && modelConfig.phoneme_id_map) {
+          const mapped = mapPhonemesArrayToIds(parsed.phonemes, modelConfig.phoneme_id_map);
+          for (let j = 0; j < mapped.length; j += 1) {
+            phonemeIds.push(Number(mapped[j]));
+          }
+        }
+      }
+
+      if (phonemeIds.length === 0) {
+        throw new Error(
+          collectedErrors.join(' | ') || 'Aucun phoneme_id généré pour la phrase.'
+        );
+      }
+      return phonemeIds;
+    } catch (err) {
+      throw wrapPiperStageError('Phonémisation WASM', err);
+    }
+  }
+
+  async function createOrGetOnnxPiperRuntime() {
+    const ort = await ensureOnnxRuntimeConfigured();
+    if (state.piper.ortSession && state.piper.modelConfig) {
+      return {
+        ort,
+        ortSession: state.piper.ortSession,
+        modelConfig: state.piper.modelConfig,
+      };
+    }
+    if (state.piper.ortSessionPromise) return state.piper.ortSessionPromise;
+
+    state.piper.ortSessionPromise = (async () => {
+      try {
+        const { modelBytes, modelConfig } = await readPiperAssetsFromOpfs();
+        applyOnnxSingleThreadConfig(ort);
+        let ortSession;
+        try {
+          ortSession = await ort.InferenceSession.create(modelBytes, {
+            executionProviders: ['wasm'],
+          });
+        } catch (sessionErr) {
+          throw wrapPiperStageError('Session ONNX', sessionErr);
+        }
+        state.piper.ortSession = ortSession;
+        state.piper.modelConfig = modelConfig;
+        return { ort, ortSession, modelConfig };
       } catch (err) {
-        state.piper.sessionPromise = null;
-        state.piper.session = null;
+        state.piper.ortSession = null;
+        state.piper.ortSessionPromise = null;
         throw err;
       }
     })();
 
-    return state.piper.sessionPromise;
+    return state.piper.ortSessionPromise;
+  }
+
+  function encodePcmSamplesToWavBuffer(rawSamples, sampleRate) {
+    const length = rawSamples && typeof rawSamples.length === 'number' ? rawSamples.length : 0;
+    if (length <= 0) {
+      throw new Error('Le tenseur audio de sortie est vide.');
+    }
+    const rate = Number(sampleRate) > 0 ? Number(sampleRate) : 22050;
+    const isInt16Source = rawSamples instanceof Int16Array;
+    const dataByteLength = length * 2;
+    const buffer = new ArrayBuffer(44 + dataByteLength);
+    const view = new DataView(buffer);
+
+    const writeAscii = (offset, str) => {
+      for (let i = 0; i < str.length; i += 1) {
+        view.setUint8(offset + i, str.charCodeAt(i));
+      }
+    };
+
+    writeAscii(0, 'RIFF');
+    view.setUint32(4, 36 + dataByteLength, true);
+    writeAscii(8, 'WAVE');
+    writeAscii(12, 'fmt ');
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true); // PCM
+    view.setUint16(22, 1, true); // Mono
+    view.setUint32(24, rate, true);
+    view.setUint32(28, rate * 2, true);
+    view.setUint16(32, 2, true);
+    view.setUint16(34, 16, true);
+    writeAscii(36, 'data');
+    view.setUint32(40, dataByteLength, true);
+
+    let offset = 44;
+    if (isInt16Source) {
+      for (let i = 0; i < length; i += 1) {
+        view.setInt16(offset, rawSamples[i], true);
+        offset += 2;
+      }
+    } else {
+      for (let i = 0; i < length; i += 1) {
+        const sample = Number(rawSamples[i]) || 0;
+        const clamped = Math.max(-1, Math.min(1, sample));
+        const int16 = clamped < 0 ? Math.round(clamped * 32768) : Math.round(clamped * 32767);
+        view.setInt16(offset, int16, true);
+        offset += 2;
+      }
+    }
+
+    return buffer;
+  }
+
+  async function extractOutputAudioSamples(outputTensor) {
+    if (!outputTensor) {
+      throw new Error('Tenseur de sortie absent après session.run().');
+    }
+    let samples = null;
+    if (typeof outputTensor.getData === 'function') {
+      samples = await outputTensor.getData();
+    } else if (outputTensor.data != null) {
+      samples = outputTensor.data;
+    }
+    if (
+      !samples ||
+      (!(samples instanceof Float32Array) &&
+        !(samples instanceof Int16Array) &&
+        !(samples instanceof Float64Array) &&
+        !ArrayBuffer.isView(samples) &&
+        !Array.isArray(samples))
+    ) {
+      throw new Error('Format de sortie audio ONNX inattendu (data manquante).');
+    }
+    return samples;
   }
 
   async function validateAudioBlob(rawAudio) {
@@ -844,19 +1173,78 @@
     return wavBlob;
   }
 
-  async function synthesizePiperWav(mod, text) {
-    const session = await createOrGetPiperSession(mod);
-    let rawAudio = null;
+  async function synthesizePiperWav(text) {
+    const { ort, ortSession, modelConfig } = await createOrGetOnnxPiperRuntime();
+    const phonemeIds = await phonemizeTextForPiper(text, modelConfig);
+
+    let inputTensor = null;
+    let lengthsTensor = null;
+    let scalesTensor = null;
+    let sidTensor = null;
+    let outputTensor = null;
+
     try {
-      rawAudio = await session.predict(text);
-    } catch (sessionErr) {
-      if (typeof mod.predict === 'function' && session !== mod) {
-        rawAudio = await mod.predict({ text, voiceId: PIPER_VOICE_ID });
-      } else {
-        throw sessionErr;
+      let results;
+      try {
+        const phonemeBigInts = BigInt64Array.from(phonemeIds, (id) => BigInt(id));
+        inputTensor = new ort.Tensor('int64', phonemeBigInts, [1, phonemeBigInts.length]);
+        lengthsTensor = new ort.Tensor(
+          'int64',
+          BigInt64Array.from([BigInt(phonemeBigInts.length)]),
+          [1]
+        );
+        const noiseScale = Number(modelConfig?.inference?.noise_scale ?? 0.667);
+        const lengthScale = Number(modelConfig?.inference?.length_scale ?? 1.0);
+        const noiseW = Number(modelConfig?.inference?.noise_w ?? 0.8);
+        scalesTensor = new ort.Tensor(
+          'float32',
+          new Float32Array([noiseScale, lengthScale, noiseW]),
+          [3]
+        );
+
+        const feeds = {
+          input: inputTensor,
+          input_lengths: lengthsTensor,
+          scales: scalesTensor,
+        };
+        if (Array.isArray(ortSession.inputNames) && ortSession.inputNames.includes('sid')) {
+          const speakerMap = modelConfig && modelConfig.speaker_id_map;
+          const defaultSid =
+            speakerMap && typeof speakerMap === 'object'
+              ? Number(Object.values(speakerMap)[0] ?? 0)
+              : 0;
+          sidTensor = new ort.Tensor('int64', BigInt64Array.from([BigInt(defaultSid)]), [1]);
+          feeds.sid = sidTensor;
+        }
+
+        results = await ortSession.run(feeds);
+      } catch (inferErr) {
+        throw wrapPiperStageError('Inférence Tensor', inferErr);
       }
+
+      try {
+        const outKey =
+          (Array.isArray(ortSession.outputNames) && ortSession.outputNames[0]) || 'output';
+        outputTensor =
+          (results && results[outKey]) || (results && Object.values(results)[0]) || null;
+        const pcmSamples = await extractOutputAudioSamples(outputTensor);
+        const sampleRate = Number(modelConfig?.audio?.sample_rate || 22050);
+        const wavBuffer = encodePcmSamplesToWavBuffer(pcmSamples, sampleRate);
+        return await validateAudioBlob(wavBuffer);
+      } catch (wavErr) {
+        throw wrapPiperStageError('Encodage WAV', wavErr);
+      }
+    } finally {
+      [inputTensor, lengthsTensor, scalesTensor, sidTensor, outputTensor].forEach((tensor) => {
+        if (tensor && typeof tensor.dispose === 'function') {
+          try {
+            tensor.dispose();
+          } catch {
+            // Ignore dispose errors
+          }
+        }
+      });
     }
-    return validateAudioBlob(rawAudio);
   }
 
   function updatePiperUI() {
@@ -919,7 +1307,7 @@
       els.piperDeleteBtn.classList.remove('hidden');
       els.piperMessageHint.textContent =
         state.settings.voiceEngine === 'piper'
-          ? 'Piper locale (fr_FR-siwis-medium, single-thread) active et vérifiée.'
+          ? 'Piper locale (fr_FR-siwis-medium, ONNX 1.20.1 single-thread) active et vérifiée.'
           : 'Modèle Piper vérifié et prêt sur l’appareil. Voix du navigateur actuellement sélectionnée.';
     } else if (piperState.status === 'error') {
       els.piperStatusPill.textContent = 'Erreur';
@@ -941,42 +1329,50 @@
   }
 
   async function refreshPiperStoredStatus() {
+    if (state.piper.status === 'downloading') return;
     if (!isPiperBrowserSupported()) {
       state.piper.status = 'not_downloaded';
       updatePiperUI();
       return;
     }
-    if (!state.settings.piperReadyHint && state.settings.voiceEngine !== 'piper') {
-      state.piper.status = 'not_downloaded';
-      updatePiperUI();
-      return;
-    }
     try {
-      const mod = await loadPiperModule();
-      const storedList = typeof mod.stored === 'function' ? await mod.stored() : [];
-      const isPresent = Array.isArray(storedList) && storedList.includes(PIPER_VOICE_ID);
+      const isPresent = await isPiperModelStoredInOpfs();
       if (!isPresent) {
         state.piper.status = 'not_downloaded';
         state.piper.verified = false;
+        state.piper.ortSession = null;
+        state.piper.ortSessionPromise = null;
         state.settings.piperReadyHint = false;
         if (state.settings.voiceEngine === 'piper') {
           state.settings.voiceEngine = 'browser';
         }
         saveJson(STORAGE_KEYS.settings, state.settings);
-      } else {
+        updatePiperUI();
+        return;
+      }
+
+      if (state.piper.status === 'ready' && state.piper.verified && state.piper.ortSession) {
+        updatePiperUI();
+        return;
+      }
+
+      await ensureOnnxRuntimeConfigured();
+      if (!state.piper.runtimeReady) {
         await preloadPiperRuntimeAssets();
-        const wavCheck = await synthesizePiperWav(mod, 'Bonjour.');
-        if (wavCheck && wavCheck.size > 44) {
-          state.piper.status = 'ready';
-          state.piper.verified = true;
-          state.piper.message = '';
-          state.piper.lastError = '';
-        }
+      }
+      const wavCheck = await synthesizePiperWav('Bonjour.');
+      if (wavCheck && wavCheck.size > 44) {
+        state.piper.status = 'ready';
+        state.piper.verified = true;
+        state.piper.message = '';
+        state.piper.lastError = '';
       }
     } catch (err) {
       const msg = formatPiperError(err);
       state.piper.status = 'error';
       state.piper.verified = false;
+      state.piper.ortSession = null;
+      state.piper.ortSessionPromise = null;
       state.piper.message = msg;
       state.piper.lastError = msg;
     }
@@ -996,56 +1392,86 @@
     state.piper.progressPercent = 0;
     state.piper.loadedBytes = 0;
     state.piper.totalBytes = 0;
-    state.piper.stepLabel = 'Chargement du moteur Piper…';
+    state.piper.stepLabel = 'Préparation du téléchargement…';
     state.piper.message = '';
     state.piper.lastError = '';
     state.piper.verified = false;
-    state.piper.session = null;
-    state.piper.sessionPromise = null;
+    state.piper.ortSession = null;
+    state.piper.ortSessionPromise = null;
+    state.piper.modelConfig = null;
     updatePiperUI();
 
     try {
-      const mod = await loadPiperModule();
-
-      state.piper.stepLabel = 'Téléchargement du modèle fr_FR-siwis-medium…';
+      state.piper.stepLabel = 'Téléchargement de la configuration fr_FR-siwis-medium…';
       updatePiperUI();
-      await mod.download(PIPER_VOICE_ID, (progress) => {
-        if (!progress) return;
-        const loaded = Number(progress.loaded || 0);
-        const total = Number(progress.total || 0);
-        state.piper.loadedBytes = loaded;
-        state.piper.totalBytes = total;
-        const rawPct = total > 0 ? Math.round((loaded / total) * 75) : state.piper.progressPercent;
-        state.piper.progressPercent = Math.min(75, Math.max(0, rawPct));
-        state.piper.stepLabel =
-          total > 0
-            ? 'Téléchargement modèle : ' +
-              state.piper.progressPercent +
-              ' % (' +
-              formatBytesMb(loaded) +
-              ' / ' +
-              formatBytesMb(total) +
-              ')'
-            : 'Téléchargement du modèle en cours…';
-        updatePiperUI();
-      });
 
-      const storedList = typeof mod.stored === 'function' ? await mod.stored() : [PIPER_VOICE_ID];
-      if (Array.isArray(storedList) && !storedList.includes(PIPER_VOICE_ID)) {
-        throw new Error('Le modèle téléchargé n’a pas pu être vérifié dans OPFS.');
+      let configText;
+      try {
+        const configRes = await fetch(PIPER_CONFIG_URL, { mode: 'cors', redirect: 'follow' });
+        if (!configRes.ok) {
+          throw new Error('HTTP ' + configRes.status + ' sur la configuration du modèle.');
+        }
+        configText = await configRes.text();
+        JSON.parse(configText);
+      } catch (cfgErr) {
+        throw wrapPiperStageError('Téléchargement config', cfgErr);
       }
 
-      state.piper.progressPercent = 82;
-      state.piper.stepLabel = 'Préchargement et contrôle ONNX Runtime / WASM…';
+      state.piper.progressPercent = 5;
+      state.piper.stepLabel = 'Téléchargement du modèle fr_FR-siwis-medium…';
       updatePiperUI();
+
+      let modelBuffer;
+      try {
+        modelBuffer = await fetchArrayBufferWithProgress(PIPER_MODEL_URL, (loaded, total) => {
+          state.piper.loadedBytes = loaded;
+          state.piper.totalBytes = total;
+          const rawPct =
+            total > 0 ? 5 + Math.round((loaded / total) * 70) : state.piper.progressPercent;
+          state.piper.progressPercent = Math.min(75, Math.max(5, rawPct));
+          state.piper.stepLabel =
+            total > 0
+              ? 'Téléchargement modèle : ' +
+                state.piper.progressPercent +
+                ' % (' +
+                formatBytesMb(loaded) +
+                ' / ' +
+                formatBytesMb(total) +
+                ')'
+              : 'Téléchargement modèle : ' + formatBytesMb(loaded);
+          updatePiperUI();
+        });
+        if (!modelBuffer || modelBuffer.byteLength < 1024 * 1024) {
+          throw new Error('Fichier ONNX téléchargé invalide ou incomplet.');
+        }
+      } catch (dlErr) {
+        throw wrapPiperStageError('Téléchargement modèle', dlErr);
+      }
+
+      state.piper.progressPercent = 78;
+      state.piper.stepLabel = 'Enregistrement local dans OPFS…';
+      updatePiperUI();
+      try {
+        const root = await navigator.storage.getDirectory();
+        const piperDir = await root.getDirectoryHandle(PIPER_OPFS_DIR, { create: true });
+        await writeOpfsFile(piperDir, PIPER_CONFIG_FILENAME, configText);
+        await writeOpfsFile(piperDir, PIPER_MODEL_FILENAME, modelBuffer);
+      } catch (opfsErr) {
+        throw wrapPiperStageError('Stockage OPFS', opfsErr);
+      }
+
+      state.piper.progressPercent = 85;
+      state.piper.stepLabel = 'Chargement ONNX Runtime ' + ORT_VERSION + ' et WASM…';
+      updatePiperUI();
+      await ensureOnnxRuntimeConfigured();
       await preloadPiperRuntimeAssets();
 
-      state.piper.progressPercent = 92;
-      state.piper.stepLabel = 'Initialisation ONNX et test réel de génération audio…';
+      state.piper.progressPercent = 94;
+      state.piper.stepLabel = 'Test réel de génération audio Piper…';
       updatePiperUI();
-      const testBlob = await synthesizePiperWav(mod, 'Bonjour, ma voix est prête.');
+      const testBlob = await synthesizePiperWav('Bonjour, ma voix est prête.');
       if (!testBlob || testBlob.size <= 44) {
-        throw new Error('La vérification audio Piper a échoué.');
+        throw wrapPiperStageError('Encodage WAV', new Error('La vérification audio Piper a échoué.'));
       }
 
       state.piper.status = 'ready';
@@ -1063,8 +1489,8 @@
       state.piper.status = 'error';
       state.piper.stepLabel = '';
       state.piper.verified = false;
-      state.piper.session = null;
-      state.piper.sessionPromise = null;
+      state.piper.ortSession = null;
+      state.piper.ortSessionPromise = null;
       state.piper.message = msg;
       state.piper.lastError = msg;
       state.settings.voiceEngine = 'browser';
@@ -1075,15 +1501,21 @@
 
   async function deletePiperModel() {
     stopSpeaking();
-    try {
-      const mod = await loadPiperModule();
-      if (typeof mod.remove === 'function') {
-        await mod.remove(PIPER_VOICE_ID);
-      } else if (typeof mod.flush === 'function') {
-        await mod.flush();
+    if (isPiperBrowserSupported()) {
+      try {
+        const root = await navigator.storage.getDirectory();
+        await removeOpfsEntrySafe(root, PIPER_MODEL_FILENAME);
+        await removeOpfsEntrySafe(root, PIPER_CONFIG_FILENAME);
+        try {
+          const piperDir = await root.getDirectoryHandle(PIPER_OPFS_DIR);
+          await removeOpfsEntrySafe(piperDir, PIPER_MODEL_FILENAME);
+          await removeOpfsEntrySafe(piperDir, PIPER_CONFIG_FILENAME);
+        } catch {
+          // Ignore missing subdir
+        }
+      } catch {
+        // Ignore OPFS cleanup errors
       }
-    } catch {
-      // Ignore deletion errors
     }
     state.piper.status = 'not_downloaded';
     state.piper.progressPercent = 0;
@@ -1092,8 +1524,9 @@
     state.piper.stepLabel = '';
     state.piper.message = '';
     state.piper.lastError = '';
-    state.piper.session = null;
-    state.piper.sessionPromise = null;
+    state.piper.ortSession = null;
+    state.piper.ortSessionPromise = null;
+    state.piper.modelConfig = null;
     state.piper.verified = false;
     state.settings.piperReadyHint = false;
     state.settings.voiceEngine = 'browser';
@@ -1308,12 +1741,15 @@
 
     let playedAnyChunk = false;
     try {
-      const mod = await loadPiperModule();
+      await ensureOnnxRuntimeConfigured();
       if (runId !== state.speechRunId) return;
 
-      const storedList = typeof mod.stored === 'function' ? await mod.stored() : [];
-      if (!Array.isArray(storedList) || !storedList.includes(PIPER_VOICE_ID)) {
-        throw new Error('Modèle fr_FR-siwis-medium introuvable dans OPFS.');
+      const isPresent = await isPiperModelStoredInOpfs();
+      if (!isPresent) {
+        throw wrapPiperStageError(
+          'Stockage OPFS',
+          new Error('Modèle fr_FR-siwis-medium introuvable dans OPFS.')
+        );
       }
 
       if (!state.piper.runtimeReady) {
@@ -1322,9 +1758,13 @@
 
       for (let i = 0; i < chunks.length; i += 1) {
         if (runId !== state.speechRunId) return;
-        const wavBlob = await synthesizePiperWav(mod, chunks[i]);
+        const wavBlob = await synthesizePiperWav(chunks[i]);
         if (runId !== state.speechRunId) return;
-        await playWavBlob(wavBlob, runId);
+        try {
+          await playWavBlob(wavBlob, runId);
+        } catch (playErr) {
+          throw wrapPiperStageError('Lecture Audio', playErr);
+        }
         playedAnyChunk = true;
       }
 
@@ -1342,8 +1782,8 @@
       console.error('Erreur Piper WASM :', err);
       state.piper.status = 'error';
       state.piper.verified = false;
-      state.piper.session = null;
-      state.piper.sessionPromise = null;
+      state.piper.ortSession = null;
+      state.piper.ortSessionPromise = null;
       state.piper.message = errMsg;
       state.piper.lastError = errMsg;
       state.settings.voiceEngine = 'browser';

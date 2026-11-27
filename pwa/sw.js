@@ -1,4 +1,4 @@
-const CACHE_NAME = 'pauline-pwa-v8';
+const CACHE_NAME = 'pauline-pwa-v9';
 
 const APP_SHELL_ASSETS = [
   './',
