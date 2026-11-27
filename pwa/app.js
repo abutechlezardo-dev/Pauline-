@@ -20,7 +20,7 @@
   const PIPER_VOICE_ID = 'fr_FR-siwis-medium';
   const ORT_VERSION = '1.18.0';
   const ORT_DIST_BASE = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@' + ORT_VERSION + '/dist/';
-  const ORT_ESM_URL = ORT_DIST_BASE + 'ort.wasm.min.mjs';
+  const ORT_ESM_URL = ORT_DIST_BASE + 'esm/ort.wasm.min.js';
   const PIPER_WASM_VERSION = '1.0.0';
   const PIPER_WASM_BASE =
     'https://cdn.jsdelivr.net/npm/@diffusionstudio/piper-wasm@' + PIPER_WASM_VERSION + '/build/';
