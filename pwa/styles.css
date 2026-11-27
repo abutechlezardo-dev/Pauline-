@@ -939,3 +939,9 @@ body {
   border-color: rgba(255, 138, 138, 0.35);
   color: #ffb4b4;
 }
+
+.field-hint.error {
+  color: #ffb4b4;
+  font-weight: 500;
+}
+

@@ -18,9 +18,26 @@
 
   const OBSOLETE_MODELS = new Set(['gemini-2.5-flash-lite']);
   const PIPER_VOICE_ID = 'fr_FR-siwis-medium';
+  const ORT_VERSION = '1.18.0';
+  const ORT_DIST_BASE = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@' + ORT_VERSION + '/dist/';
+  const ORT_ESM_URL = ORT_DIST_BASE + 'ort.wasm.min.mjs';
+  const PIPER_WASM_VERSION = '1.0.0';
+  const PIPER_WASM_BASE =
+    'https://cdn.jsdelivr.net/npm/@diffusionstudio/piper-wasm@' + PIPER_WASM_VERSION + '/build/';
+  const PIPER_PHONEMIZE_WASM = PIPER_WASM_BASE + 'piper_phonemize.wasm';
+  const PIPER_PHONEMIZE_DATA = PIPER_WASM_BASE + 'piper_phonemize.data';
   const PIPER_ESM_URLS = [
-    'https://cdn.jsdelivr.net/npm/@mintplex-labs/piper-tts-web/+esm',
-    'https://cdn.jsdelivr.net/npm/@diffusionstudio/vits-web/+esm',
+    'https://cdn.jsdelivr.net/npm/@mintplex-labs/piper-tts-web@1.0.5/dist/index.js',
+    'https://cdn.jsdelivr.net/npm/@mintplex-labs/piper-tts-web@1.0.5/+esm',
+    'https://cdn.jsdelivr.net/npm/@mintplex-labs/piper-tts-web@1.0.4/+esm',
+    'https://cdn.jsdelivr.net/npm/@diffusionstudio/vits-web@1.0.3/+esm',
+  ];
+  const PIPER_RUNTIME_ASSETS = [
+    { url: ORT_ESM_URL, kind: 'js' },
+    { url: ORT_DIST_BASE + 'ort-wasm-simd.wasm', kind: 'wasm' },
+    { url: ORT_DIST_BASE + 'ort-wasm.wasm', kind: 'wasm' },
+    { url: PIPER_PHONEMIZE_WASM, kind: 'wasm' },
+    { url: PIPER_PHONEMIZE_DATA, kind: 'data' },
   ];
 
   const FEMALE_VOICE_HINTS = [
@@ -95,9 +112,17 @@
       progressPercent: 0,
       loadedBytes: 0,
       totalBytes: 0,
+      stepLabel: '',
       message: '',
+      lastError: '',
       module: null,
       modulePromise: null,
+      ortModule: null,
+      ortPromise: null,
+      session: null,
+      sessionPromise: null,
+      runtimeReady: false,
+      verified: false,
     },
   };
 
@@ -632,7 +657,97 @@
     );
   }
 
+  function applyOnnxSingleThreadConfig(ortCandidate) {
+    const ort =
+      ortCandidate && ortCandidate.env
+        ? ortCandidate
+        : ortCandidate && ortCandidate.default && ortCandidate.default.env
+          ? ortCandidate.default
+          : null;
+    if (!ort || !ort.env || !ort.env.wasm) return false;
+    ort.env.wasm.numThreads = 1;
+    ort.env.wasm.simd = true;
+    ort.env.wasm.proxy = false;
+    ort.env.wasm.wasmPaths = {
+      'ort-wasm.wasm': ORT_DIST_BASE + 'ort-wasm.wasm',
+      'ort-wasm-simd.wasm': ORT_DIST_BASE + 'ort-wasm-simd.wasm',
+      'ort-wasm-threaded.wasm': ORT_DIST_BASE + 'ort-wasm-threaded.wasm',
+      'ort-wasm-simd-threaded.wasm': ORT_DIST_BASE + 'ort-wasm-simd-threaded.wasm',
+    };
+    return true;
+  }
+
+  function formatPiperError(err) {
+    const raw = (err && (err.message || String(err))) || 'Erreur inconnue.';
+    if (/magic word|CompileError|WebAssembly\.instantiate/i.test(raw)) {
+      return 'Binaire WASM invalide ou bloqué (' + raw + ').';
+    }
+    if (/SharedArrayBuffer|crossOriginIsolated/i.test(raw)) {
+      return 'Mode thread bloqué : force single-thread (' + raw + ').';
+    }
+    if (/Failed to fetch|NetworkError|Load failed/i.test(raw)) {
+      return 'Impossible de charger les ressources ONNX/WASM (' + raw + ').';
+    }
+    return raw;
+  }
+
+  async function ensureOnnxRuntimeConfigured() {
+    if (state.piper.ortModule) {
+      applyOnnxSingleThreadConfig(state.piper.ortModule);
+      return state.piper.ortModule;
+    }
+    if (state.piper.ortPromise) return state.piper.ortPromise;
+
+    state.piper.ortPromise = (async () => {
+      try {
+        const ort = await import(ORT_ESM_URL);
+        if (!applyOnnxSingleThreadConfig(ort)) {
+          throw new Error('ONNX Runtime Web (' + ORT_VERSION + ') chargé sans env.wasm.');
+        }
+        state.piper.ortModule = ort;
+        return ort;
+      } catch (err) {
+        state.piper.ortPromise = null;
+        throw err;
+      }
+    })();
+
+    return state.piper.ortPromise;
+  }
+
+  async function preloadPiperRuntimeAssets() {
+    for (let i = 0; i < PIPER_RUNTIME_ASSETS.length; i += 1) {
+      const asset = PIPER_RUNTIME_ASSETS[i];
+      const response = await fetch(asset.url, { mode: 'cors' });
+      if (!response.ok) {
+        throw new Error('HTTP ' + response.status + ' sur ' + asset.url);
+      }
+      const contentType = (response.headers.get('content-type') || '').toLowerCase();
+      if (contentType.includes('text/html')) {
+        throw new Error('Réponse HTML inattendue au lieu de ' + asset.kind + ' (' + asset.url + ')');
+      }
+      const buffer = await response.arrayBuffer();
+      if (!buffer || buffer.byteLength === 0) {
+        throw new Error('Fichier vide : ' + asset.url);
+      }
+      if (asset.kind === 'wasm') {
+        const header = new Uint8Array(buffer.slice(0, 4));
+        const isWasm =
+          header.length === 4 &&
+          header[0] === 0x00 &&
+          header[1] === 0x61 &&
+          header[2] === 0x73 &&
+          header[3] === 0x6d;
+        if (!isWasm) {
+          throw new Error('En-tête WASM invalide pour ' + asset.url);
+        }
+      }
+    }
+    state.piper.runtimeReady = true;
+  }
+
   async function loadPiperModule() {
+    await ensureOnnxRuntimeConfigured();
     if (state.piper.module) return state.piper.module;
     if (state.piper.modulePromise) return state.piper.modulePromise;
 
@@ -641,7 +756,14 @@
       for (const url of PIPER_ESM_URLS) {
         try {
           const mod = await import(url);
-          if (mod && typeof mod.predict === 'function' && typeof mod.download === 'function') {
+          if (
+            mod &&
+            typeof mod.download === 'function' &&
+            (typeof mod.predict === 'function' || typeof mod.TtsSession === 'function')
+          ) {
+            if (typeof globalThis !== 'undefined' && globalThis.ort) {
+              applyOnnxSingleThreadConfig(globalThis.ort);
+            }
             state.piper.module = mod;
             return mod;
           }
@@ -654,6 +776,92 @@
     })();
 
     return state.piper.modulePromise;
+  }
+
+  async function createOrGetPiperSession(mod) {
+    await ensureOnnxRuntimeConfigured();
+    if (state.piper.session) return state.piper.session;
+    if (state.piper.sessionPromise) return state.piper.sessionPromise;
+
+    state.piper.sessionPromise = (async () => {
+      try {
+        const sessionConfig = {
+          voiceId: PIPER_VOICE_ID,
+          allowLocalModels: true,
+          wasmPaths: {
+            onnxWasm: ORT_DIST_BASE,
+            piperWasm: PIPER_PHONEMIZE_WASM,
+            piperData: PIPER_PHONEMIZE_DATA,
+          },
+        };
+
+        let session = null;
+        if (mod.TtsSession && typeof mod.TtsSession.create === 'function') {
+          session = await mod.TtsSession.create(sessionConfig);
+        } else if (typeof mod.TtsSession === 'function') {
+          session = new mod.TtsSession(sessionConfig);
+          if (typeof session.init === 'function') {
+            await session.init();
+          }
+        } else if (typeof mod.predict === 'function') {
+          session = {
+            predict: (text) => mod.predict({ text, voiceId: PIPER_VOICE_ID }),
+          };
+        }
+
+        if (!session || typeof session.predict !== 'function') {
+          throw new Error('Session Piper TtsSession introuvable dans le module chargé.');
+        }
+
+        applyOnnxSingleThreadConfig(state.piper.ortModule);
+        state.piper.session = session;
+        return session;
+      } catch (err) {
+        state.piper.sessionPromise = null;
+        state.piper.session = null;
+        throw err;
+      }
+    })();
+
+    return state.piper.sessionPromise;
+  }
+
+  async function validateAudioBlob(rawAudio) {
+    let wavBlob = null;
+    if (rawAudio instanceof Blob) {
+      wavBlob = rawAudio;
+    } else if (rawAudio instanceof ArrayBuffer || ArrayBuffer.isView(rawAudio)) {
+      wavBlob = new Blob([rawAudio], { type: 'audio/wav' });
+    }
+    if (!wavBlob || wavBlob.size <= 44) {
+      throw new Error('Audio WAV généré vide ou incomplet (' + (wavBlob ? wavBlob.size : 0) + ' o).');
+    }
+    const header = new Uint8Array(await wavBlob.slice(0, 4).arrayBuffer());
+    const isRiff =
+      header.length === 4 &&
+      header[0] === 0x52 &&
+      header[1] === 0x49 &&
+      header[2] === 0x46 &&
+      header[3] === 0x46;
+    if (!isRiff) {
+      throw new Error('Le flux généré par Piper n’est pas un WAV valide.');
+    }
+    return wavBlob;
+  }
+
+  async function synthesizePiperWav(mod, text) {
+    const session = await createOrGetPiperSession(mod);
+    let rawAudio = null;
+    try {
+      rawAudio = await session.predict(text);
+    } catch (sessionErr) {
+      if (typeof mod.predict === 'function' && session !== mod) {
+        rawAudio = await mod.predict({ text, voiceId: PIPER_VOICE_ID });
+      } else {
+        throw sessionErr;
+      }
+    }
+    return validateAudioBlob(rawAudio);
   }
 
   function updatePiperUI() {
@@ -677,6 +885,7 @@
     }
 
     els.piperStatusPill.classList.remove('ready', 'error');
+    els.piperMessageHint.classList.remove('error');
     els.piperProgressWrap.classList.add('hidden');
     els.piperDeleteBtn.classList.add('hidden');
     els.piperDownloadBtn.classList.remove('hidden');
@@ -686,6 +895,7 @@
       els.piperStatusPill.textContent = 'Non supporté';
       els.piperStatusPill.classList.add('error');
       els.piperDownloadBtn.disabled = true;
+      els.piperMessageHint.classList.add('error');
       els.piperMessageHint.textContent =
         'Stockage OPFS/WebAssembly indisponible sur ce navigateur : la voix navigateur reste active.';
     } else if (piperState.status === 'downloading') {
@@ -693,7 +903,8 @@
       els.piperProgressWrap.classList.remove('hidden');
       els.piperProgressFill.style.width = piperState.progressPercent + '%';
       els.piperProgressText.textContent =
-        piperState.totalBytes > 0
+        piperState.stepLabel ||
+        (piperState.totalBytes > 0
           ? 'Téléchargement : ' +
             piperState.progressPercent +
             ' % (' +
@@ -701,11 +912,11 @@
             ' / ' +
             formatBytesMb(piperState.totalBytes) +
             ')'
-          : 'Téléchargement du modèle en cours…';
+          : 'Téléchargement du modèle en cours…');
       els.piperDownloadBtn.disabled = true;
-      els.piperDownloadBtn.textContent = 'Téléchargement…';
+      els.piperDownloadBtn.textContent = 'Installation…';
       els.piperMessageHint.textContent =
-        'Le modèle fr_FR-siwis-medium est en cours de sauvegarde locale dans le navigateur.';
+        'Téléchargement du modèle fr_FR-siwis-medium et vérification du moteur ONNX/WASM…';
     } else if (piperState.status === 'ready') {
       els.piperStatusPill.textContent = 'Prêt hors ligne';
       els.piperStatusPill.classList.add('ready');
@@ -713,15 +924,17 @@
       els.piperDeleteBtn.classList.remove('hidden');
       els.piperMessageHint.textContent =
         state.settings.voiceEngine === 'piper'
-          ? 'Piper locale (fr_FR-siwis-medium) est active, avec repli automatique sur le navigateur en cas d’erreur.'
-          : 'Modèle Piper prêt sur l’appareil. Tu utilises actuellement la voix du navigateur.';
+          ? 'Piper locale (fr_FR-siwis-medium, single-thread) active et vérifiée.'
+          : 'Modèle Piper vérifié et prêt sur l’appareil. Voix du navigateur actuellement sélectionnée.';
     } else if (piperState.status === 'error') {
       els.piperStatusPill.textContent = 'Erreur';
       els.piperStatusPill.classList.add('error');
       els.piperDownloadBtn.textContent = 'Réessayer Piper';
+      els.piperMessageHint.classList.add('error');
       els.piperMessageHint.textContent =
-        (piperState.message || 'Téléchargement impossible.') +
-        ' La voix du navigateur reste active en secours.';
+        'Erreur Piper : ' +
+        (piperState.message || 'Initialisation impossible.') +
+        ' (Voix navigateur conservée en secours.)';
     } else {
       els.piperStatusPill.textContent = 'Non téléchargé';
       els.piperDownloadBtn.textContent = 'Télécharger Piper (fr_FR)';
@@ -747,19 +960,30 @@
       const mod = await loadPiperModule();
       const storedList = typeof mod.stored === 'function' ? await mod.stored() : [];
       const isPresent = Array.isArray(storedList) && storedList.includes(PIPER_VOICE_ID);
-      if (isPresent) {
-        state.piper.status = 'ready';
-      } else {
+      if (!isPresent) {
         state.piper.status = 'not_downloaded';
+        state.piper.verified = false;
         state.settings.piperReadyHint = false;
         if (state.settings.voiceEngine === 'piper') {
           state.settings.voiceEngine = 'browser';
         }
         saveJson(STORAGE_KEYS.settings, state.settings);
+      } else {
+        await preloadPiperRuntimeAssets();
+        const wavCheck = await synthesizePiperWav(mod, 'Bonjour.');
+        if (wavCheck && wavCheck.size > 44) {
+          state.piper.status = 'ready';
+          state.piper.verified = true;
+          state.piper.message = '';
+          state.piper.lastError = '';
+        }
       }
-    } catch {
-      // Keep current hint status silently without auto-downloading
-      state.piper.status = state.settings.piperReadyHint ? 'ready' : 'not_downloaded';
+    } catch (err) {
+      const msg = formatPiperError(err);
+      state.piper.status = 'error';
+      state.piper.verified = false;
+      state.piper.message = msg;
+      state.piper.lastError = msg;
     }
     updatePiperUI();
   }
@@ -777,36 +1001,79 @@
     state.piper.progressPercent = 0;
     state.piper.loadedBytes = 0;
     state.piper.totalBytes = 0;
+    state.piper.stepLabel = 'Chargement du moteur Piper…';
     state.piper.message = '';
+    state.piper.lastError = '';
+    state.piper.verified = false;
+    state.piper.session = null;
+    state.piper.sessionPromise = null;
     updatePiperUI();
 
     try {
       const mod = await loadPiperModule();
+
+      state.piper.stepLabel = 'Téléchargement du modèle fr_FR-siwis-medium…';
+      updatePiperUI();
       await mod.download(PIPER_VOICE_ID, (progress) => {
         if (!progress) return;
         const loaded = Number(progress.loaded || 0);
         const total = Number(progress.total || 0);
         state.piper.loadedBytes = loaded;
         state.piper.totalBytes = total;
-        state.piper.progressPercent =
-          total > 0 ? Math.min(100, Math.round((loaded / total) * 100)) : state.piper.progressPercent;
+        const rawPct = total > 0 ? Math.round((loaded / total) * 75) : state.piper.progressPercent;
+        state.piper.progressPercent = Math.min(75, Math.max(0, rawPct));
+        state.piper.stepLabel =
+          total > 0
+            ? 'Téléchargement modèle : ' +
+              state.piper.progressPercent +
+              ' % (' +
+              formatBytesMb(loaded) +
+              ' / ' +
+              formatBytesMb(total) +
+              ')'
+            : 'Téléchargement du modèle en cours…';
         updatePiperUI();
       });
 
       const storedList = typeof mod.stored === 'function' ? await mod.stored() : [PIPER_VOICE_ID];
       if (Array.isArray(storedList) && !storedList.includes(PIPER_VOICE_ID)) {
-        throw new Error('Le modèle téléchargé n’a pas pu être vérifié localement.');
+        throw new Error('Le modèle téléchargé n’a pas pu être vérifié dans OPFS.');
+      }
+
+      state.piper.progressPercent = 82;
+      state.piper.stepLabel = 'Préchargement et contrôle ONNX Runtime / WASM…';
+      updatePiperUI();
+      await preloadPiperRuntimeAssets();
+
+      state.piper.progressPercent = 92;
+      state.piper.stepLabel = 'Initialisation ONNX et test réel de génération audio…';
+      updatePiperUI();
+      const testBlob = await synthesizePiperWav(mod, 'Bonjour, ma voix est prête.');
+      if (!testBlob || testBlob.size <= 44) {
+        throw new Error('La vérification audio Piper a échoué.');
       }
 
       state.piper.status = 'ready';
       state.piper.progressPercent = 100;
+      state.piper.stepLabel = '';
+      state.piper.verified = true;
+      state.piper.lastError = '';
+      state.piper.message = '';
       state.settings.piperReadyHint = true;
       state.settings.voiceEngine = 'piper';
       saveJson(STORAGE_KEYS.settings, state.settings);
       updatePiperUI();
     } catch (err) {
+      const msg = formatPiperError(err);
       state.piper.status = 'error';
-      state.piper.message = (err && err.message) || 'Échec du téléchargement de Piper.';
+      state.piper.stepLabel = '';
+      state.piper.verified = false;
+      state.piper.session = null;
+      state.piper.sessionPromise = null;
+      state.piper.message = msg;
+      state.piper.lastError = msg;
+      state.settings.voiceEngine = 'browser';
+      saveJson(STORAGE_KEYS.settings, state.settings);
       updatePiperUI();
     }
   }
@@ -827,7 +1094,12 @@
     state.piper.progressPercent = 0;
     state.piper.loadedBytes = 0;
     state.piper.totalBytes = 0;
+    state.piper.stepLabel = '';
     state.piper.message = '';
+    state.piper.lastError = '';
+    state.piper.session = null;
+    state.piper.sessionPromise = null;
+    state.piper.verified = false;
     state.settings.piperReadyHint = false;
     state.settings.voiceEngine = 'browser';
     saveJson(STORAGE_KEYS.settings, state.settings);
@@ -844,6 +1116,11 @@
       if (state.audioCtx.state === 'suspended') {
         state.audioCtx.resume().catch(() => undefined);
       }
+      const silentBuffer = state.audioCtx.createBuffer(1, 1, 22050);
+      const silentSource = state.audioCtx.createBufferSource();
+      silentSource.buffer = silentBuffer;
+      silentSource.connect(state.audioCtx.destination);
+      silentSource.start(0);
     } catch {
       // Ignore AudioContext unlock issues
     }
@@ -1026,7 +1303,7 @@
     window.speechSynthesis.speak(utterance);
   }
 
-  async function speakWithPiper(cleanText, runId) {
+  async function speakWithPiper(cleanText, runId, options = {}) {
     const chunks = splitTextIntoSpeechChunks(cleanText);
     if (chunks.length === 0) return;
 
@@ -1041,35 +1318,48 @@
 
       const storedList = typeof mod.stored === 'function' ? await mod.stored() : [];
       if (!Array.isArray(storedList) || !storedList.includes(PIPER_VOICE_ID)) {
-        state.piper.status = 'not_downloaded';
-        state.settings.piperReadyHint = false;
-        updatePiperUI();
-        if (runId === state.speechRunId) {
-          speakWithBrowserSynthesis(cleanText, runId);
-        }
-        return;
+        throw new Error('Modèle fr_FR-siwis-medium introuvable dans OPFS.');
+      }
+
+      if (!state.piper.runtimeReady) {
+        await preloadPiperRuntimeAssets();
       }
 
       for (let i = 0; i < chunks.length; i += 1) {
         if (runId !== state.speechRunId) return;
-        const wavBlob = await mod.predict({
-          text: chunks[i],
-          voiceId: PIPER_VOICE_ID,
-        });
+        const wavBlob = await synthesizePiperWav(mod, chunks[i]);
         if (runId !== state.speechRunId) return;
         await playWavBlob(wavBlob, runId);
         playedAnyChunk = true;
       }
 
       if (runId === state.speechRunId) {
+        state.piper.status = 'ready';
+        state.piper.verified = true;
+        state.piper.lastError = '';
+        state.piper.message = '';
         state.isSpeaking = false;
         updateStatusLine();
         updatePiperUI();
       }
     } catch (err) {
-      console.warn('Piper WASM indisponible, repli sur speechSynthesis :', err);
+      const errMsg = formatPiperError(err);
+      console.error('Erreur Piper WASM :', err);
+      state.piper.status = 'error';
+      state.piper.verified = false;
+      state.piper.session = null;
+      state.piper.sessionPromise = null;
+      state.piper.message = errMsg;
+      state.piper.lastError = errMsg;
+      state.settings.voiceEngine = 'browser';
+      saveJson(STORAGE_KEYS.settings, state.settings);
+      updatePiperUI();
+
       if (runId === state.speechRunId) {
         if (!playedAnyChunk) {
+          if (!options.isTest) {
+            showError('Voix Piper indisponible (' + errMsg + '). Voix navigateur utilisée.');
+          }
           speakWithBrowserSynthesis(cleanText, runId);
         } else {
           state.isSpeaking = false;
@@ -1092,7 +1382,7 @@
 
     const engine = options.forceEngine || state.settings.voiceEngine || 'browser';
     if (engine === 'piper' && state.piper.status === 'ready') {
-      speakWithPiper(clean, runId);
+      speakWithPiper(clean, runId, options);
     } else {
       speakWithBrowserSynthesis(clean, runId);
     }
@@ -1542,6 +1832,7 @@
       speakText("Coucou mon amour, c'est Pauline ! Ma voix est prête pour discuter avec toi.", {
         ignoreVoiceToggle: true,
         forceEngine: chosen,
+        isTest: true,
       });
     });
 

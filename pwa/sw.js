@@ -1,4 +1,4 @@
-const CACHE_NAME = 'pauline-pwa-v5';
+const CACHE_NAME = 'pauline-pwa-v6';
 
 const APP_SHELL_ASSETS = [
   './',
@@ -11,6 +11,11 @@ const APP_SHELL_ASSETS = [
   './icons/icon-512.png',
   './icons/apple-touch-icon.png',
 ];
+
+const CACHEABLE_CDN_ORIGINS = new Set([
+  'https://cdn.jsdelivr.net',
+  'https://cdnjs.cloudflare.com',
+]);
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -41,17 +46,19 @@ self.addEventListener('fetch', (event) => {
   if (request.method !== 'GET') return;
 
   const url = new URL(request.url);
-  if (url.origin === 'https://cdn.jsdelivr.net') {
+  if (CACHEABLE_CDN_ORIGINS.has(url.origin)) {
     event.respondWith(
       caches.match(request).then((cached) => {
         if (cached) return cached;
-        return fetch(request).then((networkResponse) => {
-          if (networkResponse && networkResponse.ok) {
-            const copy = networkResponse.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
-          }
-          return networkResponse;
-        });
+        return fetch(request)
+          .then((networkResponse) => {
+            if (networkResponse && networkResponse.ok) {
+              const copy = networkResponse.clone();
+              caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
+            }
+            return networkResponse;
+          })
+          .catch(() => Response.error());
       })
     );
     return;
@@ -61,7 +68,7 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  if (request.mode === 'navigate') {
+  if (request.mode === 'navigate' || request.destination === 'document') {
     event.respondWith(
       fetch(request.url, { credentials: 'same-origin', redirect: 'follow' })
         .then((networkResponse) => {
@@ -102,7 +109,7 @@ self.addEventListener('fetch', (event) => {
           }
           return networkResponse;
         })
-        .catch(() => caches.match('./index.html'));
+        .catch(() => Response.error());
     })
   );
 });
