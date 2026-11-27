@@ -18,9 +18,9 @@
 
   const OBSOLETE_MODELS = new Set(['gemini-2.5-flash-lite']);
   const PIPER_VOICE_ID = 'fr_FR-siwis-medium';
-  const ORT_VERSION = '1.18.0';
+  const ORT_VERSION = '1.20.1';
   const ORT_DIST_BASE = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@' + ORT_VERSION + '/dist/';
-  const ORT_ESM_URL = ORT_DIST_BASE + 'esm/ort.wasm.min.js';
+  const ORT_ESM_URL = ORT_DIST_BASE + 'ort.wasm.min.mjs';
   const PIPER_WASM_VERSION = '1.0.0';
   const PIPER_WASM_BASE =
     'https://cdn.jsdelivr.net/npm/@diffusionstudio/piper-wasm@' + PIPER_WASM_VERSION + '/build/';
@@ -34,8 +34,8 @@
   ];
   const PIPER_RUNTIME_ASSETS = [
     { url: ORT_ESM_URL, kind: 'js' },
-    { url: ORT_DIST_BASE + 'ort-wasm-simd.wasm', kind: 'wasm' },
-    { url: ORT_DIST_BASE + 'ort-wasm.wasm', kind: 'wasm' },
+    { url: ORT_DIST_BASE + 'ort-wasm-simd-threaded.mjs', kind: 'js' },
+    { url: ORT_DIST_BASE + 'ort-wasm-simd-threaded.wasm', kind: 'wasm' },
     { url: PIPER_PHONEMIZE_WASM, kind: 'wasm' },
     { url: PIPER_PHONEMIZE_DATA, kind: 'data' },
   ];
@@ -668,12 +668,7 @@
     ort.env.wasm.numThreads = 1;
     ort.env.wasm.simd = true;
     ort.env.wasm.proxy = false;
-    ort.env.wasm.wasmPaths = {
-      'ort-wasm.wasm': ORT_DIST_BASE + 'ort-wasm.wasm',
-      'ort-wasm-simd.wasm': ORT_DIST_BASE + 'ort-wasm-simd.wasm',
-      'ort-wasm-threaded.wasm': ORT_DIST_BASE + 'ort-wasm-threaded.wasm',
-      'ort-wasm-simd-threaded.wasm': ORT_DIST_BASE + 'ort-wasm-simd-threaded.wasm',
-    };
+    ort.env.wasm.wasmPaths = ORT_DIST_BASE;
     return true;
   }
 
