@@ -72,7 +72,9 @@ import com.example.auth.authStateFlow
 import com.example.auth.signOut
 import com.example.data.PaulineRepository
 import com.example.data.UiState
-import com.example.voice.PaulineTextToSpeechController
+import com.example.voice.PaulineSpeechOrchestrator
+import com.example.voice.PaulineVoiceSettingsState
+import com.example.voice.VoiceEnginePreference
 import com.google.firebase.Firebase
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.auth
@@ -211,11 +213,12 @@ private fun AuthenticatedPaulineShell(
 
   val ttsController =
     remember(shellContext) {
-      PaulineTextToSpeechController(
+      PaulineSpeechOrchestrator(
         context = shellContext,
         onSpeakingChanged = { speaking -> isPaulineSpeaking = speaking },
       )
     }
+  val voiceSettingsState by ttsController.voiceSettingsState.collectAsStateWithLifecycle()
 
   DisposableEffect(ttsController) {
     onDispose { ttsController.shutdown() }
@@ -308,6 +311,7 @@ private fun AuthenticatedPaulineShell(
             viewModel = viewModel,
             isVoiceEnabled = isVoiceOutputEnabled,
             isSpeaking = isPaulineSpeaking,
+            voiceSettingsState = voiceSettingsState,
             onToggleVoice = {
               val nextEnabled = !isVoiceOutputEnabled
               isVoiceOutputEnabled = nextEnabled
@@ -316,6 +320,11 @@ private fun AuthenticatedPaulineShell(
               }
             },
             onStopSpeaking = { ttsController.stop() },
+            onSelectVoiceEngine = { pref -> ttsController.selectVoiceEngine(pref) },
+            onStartPiperDownload = { ttsController.startPiperDownload() },
+            onCancelPiperDownload = { ttsController.cancelPiperDownload() },
+            onDeletePiperModel = { ttsController.deletePiperModel() },
+            onTestVoiceSample = { sample -> ttsController.speak(sample) },
             onNavigateToMemories = { selectedTab = PaulineDestination.MEMORIES },
             onSignOut = {
               ttsController.stop()
@@ -374,8 +383,14 @@ private fun PaulineDestinationContent(
   viewModel: PaulineViewModel,
   isVoiceEnabled: Boolean,
   isSpeaking: Boolean,
+  voiceSettingsState: PaulineVoiceSettingsState,
   onToggleVoice: () -> Unit,
   onStopSpeaking: () -> Unit,
+  onSelectVoiceEngine: (VoiceEnginePreference) -> Unit,
+  onStartPiperDownload: () -> Unit,
+  onCancelPiperDownload: () -> Unit,
+  onDeletePiperModel: () -> Unit,
+  onTestVoiceSample: (String) -> Unit,
   onNavigateToMemories: () -> Unit,
   onSignOut: () -> Unit,
 ) {
@@ -401,9 +416,17 @@ private fun PaulineDestinationContent(
     PaulineDestination.AVATAR -> {
       PaulineScreen(
         uiState = uiState,
+        voiceSettingsState = voiceSettingsState,
+        isSpeaking = isSpeaking,
         onMoodSelected = viewModel::selectMood,
         onBackdropSelected = viewModel::selectBackdrop,
         onSayHello = viewModel::sayHello,
+        onSelectVoiceEngine = onSelectVoiceEngine,
+        onStartPiperDownload = onStartPiperDownload,
+        onCancelPiperDownload = onCancelPiperDownload,
+        onDeletePiperModel = onDeletePiperModel,
+        onTestVoiceSample = onTestVoiceSample,
+        onStopSpeaking = onStopSpeaking,
       )
     }
     PaulineDestination.MEMORIES -> {

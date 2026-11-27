@@ -1,4 +1,4 @@
-const CACHE_NAME = 'pauline-pwa-v4';
+const CACHE_NAME = 'pauline-pwa-v5';
 
 const APP_SHELL_ASSETS = [
   './',
@@ -41,6 +41,22 @@ self.addEventListener('fetch', (event) => {
   if (request.method !== 'GET') return;
 
   const url = new URL(request.url);
+  if (url.origin === 'https://cdn.jsdelivr.net') {
+    event.respondWith(
+      caches.match(request).then((cached) => {
+        if (cached) return cached;
+        return fetch(request).then((networkResponse) => {
+          if (networkResponse && networkResponse.ok) {
+            const copy = networkResponse.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
+          }
+          return networkResponse;
+        });
+      })
+    );
+    return;
+  }
+
   if (url.origin !== self.location.origin) {
     return;
   }

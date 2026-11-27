@@ -449,6 +449,7 @@ fun ChatScreen(
         }
         val text = draft.trim()
         if (text.isNotEmpty() && !uiState.isSending) {
+          latestOnStopSpeaking()
           draft = ""
           onSendMessage(text)
         }

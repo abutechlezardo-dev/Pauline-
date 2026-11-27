@@ -95,4 +95,27 @@
     <string name="voice_output_mute_cd">Couper la voix de Pauline</string>
     <string name="voice_output_enable_cd">Activer la voix de Pauline</string>
     <string name="chat_status_speaking">Pauline parle…</string>
+
+    <!-- Voix locale Piper -->
+    <string name="voice_settings_title">Voix de Pauline</string>
+    <string name="voice_settings_subtitle">Voix féminine française 100 % locale avec secours Android intégré</string>
+    <string name="voice_engine_piper">Piper locale (fr_FR-siwis)</string>
+    <string name="voice_engine_android">Voix système Android</string>
+    <string name="voice_active_piper">Moteur actif : Piper locale (hors ligne, gratuite)</string>
+    <string name="voice_active_android">Moteur actif : Voix système Android</string>
+    <string name="voice_active_fallback">Secours actif : Voix Android (Piper indisponible pour cette phrase)</string>
+    <string name="voice_model_not_downloaded">Modèle fr_FR-siwis-medium non téléchargé (~65 Mo)</string>
+    <string name="voice_model_description">Téléchargement manuel unique pour obtenir une voix neuronale naturelle hors ligne sans aucun coût.</string>
+    <string name="voice_model_downloading_percent">Téléchargement du modèle : %1$d %% (%2$s / %3$s)</string>
+    <string name="voice_model_downloading_bytes">Téléchargement en cours : %1$s</string>
+    <string name="voice_model_extracting">Extraction et vérification de la voix locale…</string>
+    <string name="voice_model_ready">Modèle prêt sur l\'appareil (%1$s)</string>
+    <string name="voice_model_error_prefix">Téléchargement interrompu :</string>
+    <string name="voice_download_button">Télécharger la voix Piper</string>
+    <string name="voice_retry_download_button">Réessayer le téléchargement</string>
+    <string name="voice_cancel_download_button">Annuler</string>
+    <string name="voice_delete_model_button">Supprimer le modèle</string>
+    <string name="voice_test_sample_button">Tester la voix</string>
+    <string name="voice_stop_sample_button">Arrêter l\'écoute</string>
+    <string name="voice_test_sample_phrase">Coucou mon cœur, c\'est Pauline ! Ma voix locale est prête pour discuter avec toi.</string>
 </resources>

@@ -8,11 +8,21 @@ import com.example.data.UserAvatarPreferences
 import com.example.ui.AvatarBackdrop
 import com.example.ui.AvatarMood
 import com.example.voice.VoiceCandidate
+import com.example.voice.VoiceEnginePreference
+import com.example.voice.floatSamplesToPcm16
 import com.example.voice.mergeDictatedText
+import com.example.voice.resolveEffectiveVoiceEngine
+import com.example.voice.resolveSafeArchiveTarget
+import com.example.voice.resolveVerifiedPiperModelPaths
 import com.example.voice.sanitizeTextForSpeech
 import com.example.voice.selectBestFrenchVoiceCandidate
+import com.example.voice.splitTextIntoSpeechChunks
+import java.io.File
+import kotlin.io.path.createTempDirectory
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -117,5 +127,103 @@ class ExampleRobolectricTest {
       selectBestFrenchVoiceCandidate(listOf(enUs, frMale))?.id,
     )
     assertNull(selectBestFrenchVoiceCandidate(listOf(enUs)))
+  }
+
+  @Test
+  fun `splitTextIntoSpeechChunks splits sentences naturally for fast streaming`() {
+    val chunks =
+      splitTextIntoSpeechChunks(
+        "Coucou mon cœur ! Comment s'est passée ta journée à Tours ? Moi ça va super.",
+      )
+    assertEquals(
+      listOf(
+        "Coucou mon cœur !",
+        "Comment s'est passée ta journée à Tours ?",
+        "Moi ça va super.",
+      ),
+      chunks,
+    )
+    assertEquals(emptyList<String>(), splitTextIntoSpeechChunks("   "))
+  }
+
+  @Test
+  fun `floatSamplesToPcm16 clamps out of bounds audio safely`() {
+    val pcm = floatSamplesToPcm16(floatArrayOf(-1.5f, -1.0f, 0.0f, 1.0f, 2.0f))
+    assertArrayEquals(
+      shortArrayOf(
+        (-Short.MAX_VALUE).toShort(),
+        (-Short.MAX_VALUE).toShort(),
+        0,
+        Short.MAX_VALUE,
+        Short.MAX_VALUE,
+      ),
+      pcm,
+    )
+  }
+
+  @Test
+  fun `resolveEffectiveVoiceEngine always falls back to Android when Piper is not ready`() {
+    assertEquals(
+      VoiceEnginePreference.ANDROID_SYSTEM,
+      resolveEffectiveVoiceEngine(VoiceEnginePreference.PIPER_LOCAL, isPiperModelReady = false),
+    )
+    assertEquals(
+      VoiceEnginePreference.PIPER_LOCAL,
+      resolveEffectiveVoiceEngine(VoiceEnginePreference.PIPER_LOCAL, isPiperModelReady = true),
+    )
+    assertEquals(
+      VoiceEnginePreference.ANDROID_SYSTEM,
+      resolveEffectiveVoiceEngine(VoiceEnginePreference.ANDROID_SYSTEM, isPiperModelReady = true),
+    )
+  }
+
+  @Test
+  fun `resolveSafeArchiveTarget blocks traversal and unwraps root folder`() {
+    val destDir = createTempDirectory("piper-tar-test").toFile()
+    try {
+      assertNull(resolveSafeArchiveTarget(destDir, "../../etc/passwd"))
+      assertNull(resolveSafeArchiveTarget(destDir, "pkg/../outside.onnx"))
+
+      val onnxTarget =
+        resolveSafeArchiveTarget(destDir, "vits-piper-fr_FR-siwis-medium/fr_FR-siwis-medium.onnx")
+      assertNotNull(onnxTarget)
+      assertEquals(File(destDir, "fr_FR-siwis-medium.onnx").canonicalPath, onnxTarget?.canonicalPath)
+
+      val espeakTarget =
+        resolveSafeArchiveTarget(destDir, "vits-piper-fr_FR-siwis-medium/espeak-ng-data/phontab")
+      assertNotNull(espeakTarget)
+      assertEquals(
+        File(destDir, "espeak-ng-data/phontab").canonicalPath,
+        espeakTarget?.canonicalPath,
+      )
+    } finally {
+      destDir.deleteRecursively()
+    }
+  }
+
+  @Test
+  fun `resolveVerifiedPiperModelPaths validates required onnx tokens and espeak data`() {
+    val root = createTempDirectory("piper-verify-test").toFile()
+    try {
+      assertNull(resolveVerifiedPiperModelPaths(root))
+
+      val modelFile = File(root, "fr_FR-siwis-medium.onnx")
+      modelFile.writeBytes(ByteArray(1_100_000))
+      assertNull(resolveVerifiedPiperModelPaths(root))
+
+      File(root, "tokens.txt").writeText("a 1\n")
+      assertNull(resolveVerifiedPiperModelPaths(root))
+
+      val espeakDir = File(root, "espeak-ng-data").apply { mkdirs() }
+      File(espeakDir, "phontab").writeBytes(ByteArray(64))
+
+      val resolved = resolveVerifiedPiperModelPaths(root)
+      assertNotNull(resolved)
+      assertEquals(modelFile.absolutePath, resolved?.modelFile?.absolutePath)
+      assertEquals("tokens.txt", resolved?.tokensFile?.name)
+      assertEquals("espeak-ng-data", resolved?.espeakDataDir?.name)
+    } finally {
+      root.deleteRecursively()
+    }
   }
 }

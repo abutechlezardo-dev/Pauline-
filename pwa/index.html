@@ -316,6 +316,47 @@
             <option value="gemini-2.5-flash">gemini-2.5-flash</option>
           </select>
 
+          <div class="piper-section" id="piper-section">
+            <div class="piper-header-row">
+              <div>
+                <span class="field-label">Synthèse vocale de Pauline</span>
+                <p class="field-hint">
+                  Voix française locale Piper (fr_FR-siwis-medium) ou voix du navigateur en secours.
+                </p>
+              </div>
+              <span id="piper-status-pill" class="piper-status-pill">Non téléchargé</span>
+            </div>
+
+            <label class="field-label" for="voice-engine-select">Moteur vocal actif</label>
+            <select id="voice-engine-select" class="field-input">
+              <option value="browser">Voix du navigateur (speechSynthesis)</option>
+              <option value="piper" disabled>Piper locale (fr_FR-siwis-medium — à télécharger)</option>
+            </select>
+
+            <div id="piper-progress-wrap" class="piper-progress-wrap hidden" aria-live="polite">
+              <div class="piper-progress-track">
+                <div id="piper-progress-fill" class="piper-progress-fill" style="width: 0%"></div>
+              </div>
+              <p id="piper-progress-text" class="field-hint">Préparation du téléchargement…</p>
+            </div>
+
+            <p id="piper-message-hint" class="field-hint">
+              Téléchargement manuel (~63 Mo) stocké localement sur l'appareil, sans coût à l'usage.
+            </p>
+
+            <div class="piper-actions-row">
+              <button type="button" id="piper-download-btn" class="primary-btn small-btn">
+                Télécharger Piper (fr_FR)
+              </button>
+              <button type="button" id="piper-test-btn" class="ghost-btn mini-btn">
+                Tester la voix
+              </button>
+              <button type="button" id="piper-delete-btn" class="ghost-btn mini-btn danger-ghost-btn hidden">
+                Supprimer
+              </button>
+            </div>
+          </div>
+
           <div class="voices-section">
             <div class="voices-toolbar">
               <span class="field-label">Voix disponibles (<span id="voices-count">0</span>)</span>

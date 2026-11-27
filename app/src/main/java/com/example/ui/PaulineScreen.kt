@@ -29,23 +29,35 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import android.text.format.Formatter
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.BeachAccess
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.DeleteOutline
+import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Home
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.RecordVoiceOver
 import androidx.compose.material.icons.rounded.Restaurant
 import androidx.compose.material.icons.rounded.SentimentSatisfied
 import androidx.compose.material.icons.rounded.SentimentVerySatisfied
 import androidx.compose.material.icons.rounded.Spa
+import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material.icons.rounded.WavingHand
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.minimumInteractiveComponentSize
@@ -59,6 +71,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -68,13 +81,24 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.example.R
 import com.example.ui.components.PaulineAvatar
+import com.example.voice.PaulineVoiceSettingsState
+import com.example.voice.PiperModelState
+import com.example.voice.VoiceEnginePreference
 
 @Composable
 fun PaulineScreen(
   uiState: AvatarUiState,
+  voiceSettingsState: PaulineVoiceSettingsState,
+  isSpeaking: Boolean,
   onMoodSelected: (AvatarMood) -> Unit,
   onBackdropSelected: (AvatarBackdrop) -> Unit,
   onSayHello: () -> Unit,
+  onSelectVoiceEngine: (VoiceEnginePreference) -> Unit,
+  onStartPiperDownload: () -> Unit,
+  onCancelPiperDownload: () -> Unit,
+  onDeletePiperModel: () -> Unit,
+  onTestVoiceSample: (String) -> Unit,
+  onStopSpeaking: () -> Unit,
   modifier: Modifier = Modifier,
 ) {
   val auraColor by
@@ -135,6 +159,17 @@ fun PaulineScreen(
             onSayHello = onSayHello,
             modifier = Modifier.fillMaxWidth(),
           )
+          PaulineVoiceSettingsCard(
+            voiceSettingsState = voiceSettingsState,
+            isSpeaking = isSpeaking,
+            onSelectVoiceEngine = onSelectVoiceEngine,
+            onStartPiperDownload = onStartPiperDownload,
+            onCancelPiperDownload = onCancelPiperDownload,
+            onDeletePiperModel = onDeletePiperModel,
+            onTestVoiceSample = onTestVoiceSample,
+            onStopSpeaking = onStopSpeaking,
+            modifier = Modifier.fillMaxWidth(),
+          )
           PaulineProfileCard(modifier = Modifier.fillMaxWidth())
         }
       }
@@ -161,6 +196,18 @@ fun PaulineScreen(
           onMoodSelected = onMoodSelected,
           onBackdropSelected = onBackdropSelected,
           onSayHello = onSayHello,
+          modifier = Modifier.fillMaxWidth().widthIn(max = 460.dp),
+        )
+
+        PaulineVoiceSettingsCard(
+          voiceSettingsState = voiceSettingsState,
+          isSpeaking = isSpeaking,
+          onSelectVoiceEngine = onSelectVoiceEngine,
+          onStartPiperDownload = onStartPiperDownload,
+          onCancelPiperDownload = onCancelPiperDownload,
+          onDeletePiperModel = onDeletePiperModel,
+          onTestVoiceSample = onTestVoiceSample,
+          onStopSpeaking = onStopSpeaking,
           modifier = Modifier.fillMaxWidth().widthIn(max = 460.dp),
         )
 
@@ -476,6 +523,332 @@ private fun ProfileDetailRow(
         style = MaterialTheme.typography.bodyMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
       )
+    }
+  }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun PaulineVoiceSettingsCard(
+  voiceSettingsState: PaulineVoiceSettingsState,
+  isSpeaking: Boolean,
+  onSelectVoiceEngine: (VoiceEnginePreference) -> Unit,
+  onStartPiperDownload: () -> Unit,
+  onCancelPiperDownload: () -> Unit,
+  onDeletePiperModel: () -> Unit,
+  onTestVoiceSample: (String) -> Unit,
+  onStopSpeaking: () -> Unit,
+  modifier: Modifier = Modifier,
+) {
+  val context = LocalContext.current
+  val samplePhrase = stringResource(R.string.voice_test_sample_phrase)
+
+  Surface(
+    modifier = modifier.testTag("pauline_voice_settings_card"),
+    shape = RoundedCornerShape(28.dp),
+    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+    tonalElevation = 3.dp,
+  ) {
+    Column(
+      modifier = Modifier.padding(20.dp),
+      verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+      Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+      ) {
+        Surface(
+          shape = CircleShape,
+          color = MaterialTheme.colorScheme.primaryContainer,
+          modifier = Modifier.size(38.dp),
+        ) {
+          Box(contentAlignment = Alignment.Center) {
+            Icon(
+              imageVector = Icons.Rounded.RecordVoiceOver,
+              contentDescription = null,
+              tint = MaterialTheme.colorScheme.onPrimaryContainer,
+              modifier = Modifier.size(20.dp),
+            )
+          }
+        }
+        Column(modifier = Modifier.weight(1f)) {
+          Text(
+            text = stringResource(R.string.voice_settings_title),
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+          )
+          Text(
+            text = stringResource(R.string.voice_settings_subtitle),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+          )
+        }
+      }
+
+      val activeStatusText =
+        when {
+          voiceSettingsState.usingFallbackRightNow -> stringResource(R.string.voice_active_fallback)
+          voiceSettingsState.isUsingPiperEffective -> stringResource(R.string.voice_active_piper)
+          else -> stringResource(R.string.voice_active_android)
+        }
+
+      Surface(
+        shape = RoundedCornerShape(14.dp),
+        color =
+          if (voiceSettingsState.isUsingPiperEffective) {
+            MaterialTheme.colorScheme.primaryContainer
+          } else {
+            MaterialTheme.colorScheme.secondaryContainer
+          },
+        modifier = Modifier.fillMaxWidth(),
+      ) {
+        Row(
+          modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+          Icon(
+            imageVector =
+              if (voiceSettingsState.isUsingPiperEffective) {
+                Icons.Rounded.GraphicEq
+              } else {
+                Icons.Rounded.CheckCircle
+              },
+            contentDescription = null,
+            tint =
+              if (voiceSettingsState.isUsingPiperEffective) {
+                MaterialTheme.colorScheme.onPrimaryContainer
+              } else {
+                MaterialTheme.colorScheme.onSecondaryContainer
+              },
+            modifier = Modifier.size(18.dp),
+          )
+          Text(
+            text = activeStatusText,
+            style = MaterialTheme.typography.labelLarge,
+            color =
+              if (voiceSettingsState.isUsingPiperEffective) {
+                MaterialTheme.colorScheme.onPrimaryContainer
+              } else {
+                MaterialTheme.colorScheme.onSecondaryContainer
+              },
+          )
+        }
+      }
+
+      FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+      ) {
+        FilterChip(
+          selected = voiceSettingsState.enginePreference == VoiceEnginePreference.PIPER_LOCAL,
+          onClick = { onSelectVoiceEngine(VoiceEnginePreference.PIPER_LOCAL) },
+          enabled = voiceSettingsState.isPiperReady,
+          label = { Text(stringResource(R.string.voice_engine_piper)) },
+          modifier = Modifier.minimumInteractiveComponentSize().testTag("voice_engine_piper_chip"),
+        )
+        FilterChip(
+          selected =
+            voiceSettingsState.enginePreference == VoiceEnginePreference.ANDROID_SYSTEM ||
+              !voiceSettingsState.isPiperReady,
+          onClick = { onSelectVoiceEngine(VoiceEnginePreference.ANDROID_SYSTEM) },
+          label = { Text(stringResource(R.string.voice_engine_android)) },
+          modifier = Modifier.minimumInteractiveComponentSize().testTag("voice_engine_android_chip"),
+        )
+      }
+
+      when (val modelState = voiceSettingsState.piperModelState) {
+        is PiperModelState.NotDownloaded -> {
+          Text(
+            text = stringResource(R.string.voice_model_not_downloaded),
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurface,
+          )
+          Text(
+            text = stringResource(R.string.voice_model_description),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+          )
+          Button(
+            onClick = onStartPiperDownload,
+            shape = RoundedCornerShape(16.dp),
+            modifier =
+              Modifier
+                .fillMaxWidth()
+                .minimumInteractiveComponentSize()
+                .testTag("piper_download_button"),
+          ) {
+            Icon(
+              imageVector = Icons.Rounded.Download,
+              contentDescription = null,
+              modifier = Modifier.size(20.dp),
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(stringResource(R.string.voice_download_button))
+          }
+        }
+
+        is PiperModelState.Downloading -> {
+          val downloadedLabel = Formatter.formatShortFileSize(context, modelState.downloadedBytes)
+          val progressLabel =
+            if (modelState.progressPercent != null && modelState.totalBytes != null) {
+              val totalLabel = Formatter.formatShortFileSize(context, modelState.totalBytes)
+              stringResource(
+                R.string.voice_model_downloading_percent,
+                modelState.progressPercent,
+                downloadedLabel,
+                totalLabel,
+              )
+            } else {
+              stringResource(R.string.voice_model_downloading_bytes, downloadedLabel)
+            }
+
+          Text(
+            text = progressLabel,
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurface,
+          )
+          if (modelState.progressPercent != null) {
+            LinearProgressIndicator(
+              progress = { (modelState.progressPercent / 100f).coerceIn(0f, 1f) },
+              modifier = Modifier.fillMaxWidth().testTag("piper_download_progress"),
+            )
+          } else {
+            LinearProgressIndicator(
+              modifier = Modifier.fillMaxWidth().testTag("piper_download_progress"),
+            )
+          }
+          OutlinedButton(
+            onClick = onCancelPiperDownload,
+            shape = RoundedCornerShape(16.dp),
+            modifier =
+              Modifier
+                .fillMaxWidth()
+                .minimumInteractiveComponentSize()
+                .testTag("piper_cancel_download_button"),
+          ) {
+            Icon(
+              imageVector = Icons.Rounded.Close,
+              contentDescription = null,
+              modifier = Modifier.size(18.dp),
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(stringResource(R.string.voice_cancel_download_button))
+          }
+        }
+
+        is PiperModelState.Extracting -> {
+          Text(
+            text = stringResource(R.string.voice_model_extracting),
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurface,
+          )
+          LinearProgressIndicator(
+            modifier = Modifier.fillMaxWidth().testTag("piper_extract_progress"),
+          )
+        }
+
+        is PiperModelState.Ready -> {
+          val sizeLabel = Formatter.formatShortFileSize(context, modelState.sizeBytes)
+          Text(
+            text = stringResource(R.string.voice_model_ready, sizeLabel),
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.primary,
+          )
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+          ) {
+            Button(
+              onClick = {
+                if (isSpeaking) {
+                  onStopSpeaking()
+                } else {
+                  onTestVoiceSample(samplePhrase)
+                }
+              },
+              shape = RoundedCornerShape(16.dp),
+              modifier =
+                Modifier
+                  .weight(1f)
+                  .minimumInteractiveComponentSize()
+                  .testTag("piper_test_voice_button"),
+            ) {
+              Icon(
+                imageVector = if (isSpeaking) Icons.Rounded.Stop else Icons.Rounded.PlayArrow,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
+              )
+              Spacer(modifier = Modifier.width(6.dp))
+              Text(
+                text =
+                  if (isSpeaking) {
+                    stringResource(R.string.voice_stop_sample_button)
+                  } else {
+                    stringResource(R.string.voice_test_sample_button)
+                  },
+              )
+            }
+            OutlinedButton(
+              onClick = onDeletePiperModel,
+              shape = RoundedCornerShape(16.dp),
+              modifier =
+                Modifier
+                  .minimumInteractiveComponentSize()
+                  .testTag("piper_delete_model_button"),
+            ) {
+              Icon(
+                imageVector = Icons.Rounded.DeleteOutline,
+                contentDescription = stringResource(R.string.voice_delete_model_button),
+                modifier = Modifier.size(18.dp),
+              )
+            }
+          }
+        }
+
+        is PiperModelState.Error -> {
+          Surface(
+            shape = RoundedCornerShape(14.dp),
+            color = MaterialTheme.colorScheme.errorContainer,
+            modifier = Modifier.fillMaxWidth(),
+          ) {
+            Row(
+              modifier = Modifier.padding(12.dp),
+              horizontalArrangement = Arrangement.spacedBy(8.dp),
+              verticalAlignment = Alignment.CenterVertically,
+            ) {
+              Icon(
+                imageVector = Icons.Rounded.ErrorOutline,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onErrorContainer,
+                modifier = Modifier.size(18.dp),
+              )
+              Text(
+                text = "${stringResource(R.string.voice_model_error_prefix)} ${modelState.message}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onErrorContainer,
+              )
+            }
+          }
+          Button(
+            onClick = onStartPiperDownload,
+            shape = RoundedCornerShape(16.dp),
+            modifier =
+              Modifier
+                .fillMaxWidth()
+                .minimumInteractiveComponentSize()
+                .testTag("piper_retry_download_button"),
+          ) {
+            Icon(
+              imageVector = Icons.Rounded.Download,
+              contentDescription = null,
+              modifier = Modifier.size(20.dp),
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(stringResource(R.string.voice_retry_download_button))
+          }
+        }
+      }
     }
   }
 }

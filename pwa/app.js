@@ -12,9 +12,16 @@
     apiKey: '',
     model: 'gemini-3.5-flash-lite',
     voiceEnabled: true,
+    voiceEngine: 'browser',
+    piperReadyHint: false,
   };
 
   const OBSOLETE_MODELS = new Set(['gemini-2.5-flash-lite']);
+  const PIPER_VOICE_ID = 'fr_FR-siwis-medium';
+  const PIPER_ESM_URLS = [
+    'https://cdn.jsdelivr.net/npm/@mintplex-labs/piper-tts-web/+esm',
+    'https://cdn.jsdelivr.net/npm/@diffusionstudio/vits-web/+esm',
+  ];
 
   const FEMALE_VOICE_HINTS = [
     'female',
@@ -74,12 +81,24 @@
     isSending: false,
     isListening: false,
     isSpeaking: false,
+    speechRunId: 0,
+    activeStopAudio: null,
+    audioCtx: null,
     editingMemoryId: null,
     deferredPrompt: null,
     recognition: null,
     dictationBaseDraft: '',
     dictationFinalText: '',
     manualMicStop: false,
+    piper: {
+      status: 'not_downloaded', // 'not_downloaded' | 'downloading' | 'ready' | 'error'
+      progressPercent: 0,
+      loadedBytes: 0,
+      totalBytes: 0,
+      message: '',
+      module: null,
+      modulePromise: null,
+    },
   };
 
   const els = {
@@ -124,6 +143,15 @@
     prenomInput: document.getElementById('prenom-input'),
     geminiKeyInput: document.getElementById('gemini-key-input'),
     modelSelect: document.getElementById('model-select'),
+    voiceEngineSelect: document.getElementById('voice-engine-select'),
+    piperStatusPill: document.getElementById('piper-status-pill'),
+    piperProgressWrap: document.getElementById('piper-progress-wrap'),
+    piperProgressFill: document.getElementById('piper-progress-fill'),
+    piperProgressText: document.getElementById('piper-progress-text'),
+    piperMessageHint: document.getElementById('piper-message-hint'),
+    piperDownloadBtn: document.getElementById('piper-download-btn'),
+    piperTestBtn: document.getElementById('piper-test-btn'),
+    piperDeleteBtn: document.getElementById('piper-delete-btn'),
     voicesCount: document.getElementById('voices-count'),
     voicesListBox: document.getElementById('voices-list-box'),
     refreshVoicesBtn: document.getElementById('refresh-voices-btn'),
@@ -590,23 +618,377 @@
     });
   }
 
+  function formatBytesMb(bytes) {
+    if (!bytes || bytes <= 0) return '0 Mo';
+    return (bytes / (1024 * 1024)).toFixed(1) + ' Mo';
+  }
+
+  function isPiperBrowserSupported() {
+    return (
+      typeof WebAssembly === 'object' &&
+      typeof navigator !== 'undefined' &&
+      navigator.storage &&
+      typeof navigator.storage.getDirectory === 'function'
+    );
+  }
+
+  async function loadPiperModule() {
+    if (state.piper.module) return state.piper.module;
+    if (state.piper.modulePromise) return state.piper.modulePromise;
+
+    state.piper.modulePromise = (async () => {
+      let lastError = null;
+      for (const url of PIPER_ESM_URLS) {
+        try {
+          const mod = await import(url);
+          if (mod && typeof mod.predict === 'function' && typeof mod.download === 'function') {
+            state.piper.module = mod;
+            return mod;
+          }
+        } catch (err) {
+          lastError = err;
+        }
+      }
+      state.piper.modulePromise = null;
+      throw lastError || new Error('Impossible de charger le moteur Piper WASM.');
+    })();
+
+    return state.piper.modulePromise;
+  }
+
+  function updatePiperUI() {
+    if (!els.piperStatusPill) return;
+    const piperState = state.piper;
+    const isSupported = isPiperBrowserSupported();
+
+    const piperOption = els.voiceEngineSelect.querySelector('option[value="piper"]');
+    if (piperOption) {
+      piperOption.disabled = piperState.status !== 'ready';
+      piperOption.textContent =
+        piperState.status === 'ready'
+          ? 'Piper locale (fr_FR-siwis-medium)'
+          : 'Piper locale (fr_FR-siwis-medium — à télécharger)';
+    }
+
+    if (piperState.status !== 'ready' && state.settings.voiceEngine === 'piper') {
+      els.voiceEngineSelect.value = 'browser';
+    } else {
+      els.voiceEngineSelect.value = state.settings.voiceEngine || 'browser';
+    }
+
+    els.piperStatusPill.classList.remove('ready', 'error');
+    els.piperProgressWrap.classList.add('hidden');
+    els.piperDeleteBtn.classList.add('hidden');
+    els.piperDownloadBtn.classList.remove('hidden');
+    els.piperDownloadBtn.disabled = false;
+
+    if (!isSupported) {
+      els.piperStatusPill.textContent = 'Non supporté';
+      els.piperStatusPill.classList.add('error');
+      els.piperDownloadBtn.disabled = true;
+      els.piperMessageHint.textContent =
+        'Stockage OPFS/WebAssembly indisponible sur ce navigateur : la voix navigateur reste active.';
+    } else if (piperState.status === 'downloading') {
+      els.piperStatusPill.textContent = piperState.progressPercent + ' %';
+      els.piperProgressWrap.classList.remove('hidden');
+      els.piperProgressFill.style.width = piperState.progressPercent + '%';
+      els.piperProgressText.textContent =
+        piperState.totalBytes > 0
+          ? 'Téléchargement : ' +
+            piperState.progressPercent +
+            ' % (' +
+            formatBytesMb(piperState.loadedBytes) +
+            ' / ' +
+            formatBytesMb(piperState.totalBytes) +
+            ')'
+          : 'Téléchargement du modèle en cours…';
+      els.piperDownloadBtn.disabled = true;
+      els.piperDownloadBtn.textContent = 'Téléchargement…';
+      els.piperMessageHint.textContent =
+        'Le modèle fr_FR-siwis-medium est en cours de sauvegarde locale dans le navigateur.';
+    } else if (piperState.status === 'ready') {
+      els.piperStatusPill.textContent = 'Prêt hors ligne';
+      els.piperStatusPill.classList.add('ready');
+      els.piperDownloadBtn.classList.add('hidden');
+      els.piperDeleteBtn.classList.remove('hidden');
+      els.piperMessageHint.textContent =
+        state.settings.voiceEngine === 'piper'
+          ? 'Piper locale (fr_FR-siwis-medium) est active, avec repli automatique sur le navigateur en cas d’erreur.'
+          : 'Modèle Piper prêt sur l’appareil. Tu utilises actuellement la voix du navigateur.';
+    } else if (piperState.status === 'error') {
+      els.piperStatusPill.textContent = 'Erreur';
+      els.piperStatusPill.classList.add('error');
+      els.piperDownloadBtn.textContent = 'Réessayer Piper';
+      els.piperMessageHint.textContent =
+        (piperState.message || 'Téléchargement impossible.') +
+        ' La voix du navigateur reste active en secours.';
+    } else {
+      els.piperStatusPill.textContent = 'Non téléchargé';
+      els.piperDownloadBtn.textContent = 'Télécharger Piper (fr_FR)';
+      els.piperMessageHint.textContent =
+        'Téléchargement manuel (~63 Mo) stocké localement sur l’appareil, sans coût à l’usage.';
+    }
+
+    els.piperTestBtn.textContent = state.isSpeaking ? 'Arrêter' : 'Tester la voix';
+  }
+
+  async function refreshPiperStoredStatus() {
+    if (!isPiperBrowserSupported()) {
+      state.piper.status = 'not_downloaded';
+      updatePiperUI();
+      return;
+    }
+    if (!state.settings.piperReadyHint && state.settings.voiceEngine !== 'piper') {
+      state.piper.status = 'not_downloaded';
+      updatePiperUI();
+      return;
+    }
+    try {
+      const mod = await loadPiperModule();
+      const storedList = typeof mod.stored === 'function' ? await mod.stored() : [];
+      const isPresent = Array.isArray(storedList) && storedList.includes(PIPER_VOICE_ID);
+      if (isPresent) {
+        state.piper.status = 'ready';
+      } else {
+        state.piper.status = 'not_downloaded';
+        state.settings.piperReadyHint = false;
+        if (state.settings.voiceEngine === 'piper') {
+          state.settings.voiceEngine = 'browser';
+        }
+        saveJson(STORAGE_KEYS.settings, state.settings);
+      }
+    } catch {
+      // Keep current hint status silently without auto-downloading
+      state.piper.status = state.settings.piperReadyHint ? 'ready' : 'not_downloaded';
+    }
+    updatePiperUI();
+  }
+
+  async function downloadPiperModel() {
+    if (state.piper.status === 'downloading') return;
+    if (!isPiperBrowserSupported()) {
+      state.piper.status = 'error';
+      state.piper.message = 'Navigateur incompatible avec WebAssembly/OPFS.';
+      updatePiperUI();
+      return;
+    }
+
+    state.piper.status = 'downloading';
+    state.piper.progressPercent = 0;
+    state.piper.loadedBytes = 0;
+    state.piper.totalBytes = 0;
+    state.piper.message = '';
+    updatePiperUI();
+
+    try {
+      const mod = await loadPiperModule();
+      await mod.download(PIPER_VOICE_ID, (progress) => {
+        if (!progress) return;
+        const loaded = Number(progress.loaded || 0);
+        const total = Number(progress.total || 0);
+        state.piper.loadedBytes = loaded;
+        state.piper.totalBytes = total;
+        state.piper.progressPercent =
+          total > 0 ? Math.min(100, Math.round((loaded / total) * 100)) : state.piper.progressPercent;
+        updatePiperUI();
+      });
+
+      const storedList = typeof mod.stored === 'function' ? await mod.stored() : [PIPER_VOICE_ID];
+      if (Array.isArray(storedList) && !storedList.includes(PIPER_VOICE_ID)) {
+        throw new Error('Le modèle téléchargé n’a pas pu être vérifié localement.');
+      }
+
+      state.piper.status = 'ready';
+      state.piper.progressPercent = 100;
+      state.settings.piperReadyHint = true;
+      state.settings.voiceEngine = 'piper';
+      saveJson(STORAGE_KEYS.settings, state.settings);
+      updatePiperUI();
+    } catch (err) {
+      state.piper.status = 'error';
+      state.piper.message = (err && err.message) || 'Échec du téléchargement de Piper.';
+      updatePiperUI();
+    }
+  }
+
+  async function deletePiperModel() {
+    stopSpeaking();
+    try {
+      const mod = await loadPiperModule();
+      if (typeof mod.remove === 'function') {
+        await mod.remove(PIPER_VOICE_ID);
+      } else if (typeof mod.flush === 'function') {
+        await mod.flush();
+      }
+    } catch {
+      // Ignore deletion errors
+    }
+    state.piper.status = 'not_downloaded';
+    state.piper.progressPercent = 0;
+    state.piper.loadedBytes = 0;
+    state.piper.totalBytes = 0;
+    state.piper.message = '';
+    state.settings.piperReadyHint = false;
+    state.settings.voiceEngine = 'browser';
+    saveJson(STORAGE_KEYS.settings, state.settings);
+    updatePiperUI();
+  }
+
+  function unlockAudioForSpeech() {
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      if (!state.audioCtx) {
+        state.audioCtx = new AudioCtx();
+      }
+      if (state.audioCtx.state === 'suspended') {
+        state.audioCtx.resume().catch(() => undefined);
+      }
+    } catch {
+      // Ignore AudioContext unlock issues
+    }
+  }
+
+  function splitTextIntoSpeechChunks(cleanText) {
+    if (!cleanText) return [];
+    const matches = cleanText.match(/[^.!?…;]+(?:[.!?…;]+|$)/g);
+    if (!matches) return [cleanText];
+    const parts = matches.map((part) => part.trim()).filter(Boolean);
+    return parts.length > 0 ? parts : [cleanText];
+  }
+
+  function playWavBlob(wavBlob, runId) {
+    return new Promise((resolve, reject) => {
+      if (runId !== state.speechRunId) {
+        resolve();
+        return;
+      }
+
+      if (state.audioCtx && typeof state.audioCtx.decodeAudioData === 'function') {
+        wavBlob
+          .arrayBuffer()
+          .then((buffer) => {
+            if (runId !== state.speechRunId) {
+              resolve();
+              return null;
+            }
+            return state.audioCtx.decodeAudioData(buffer);
+          })
+          .then((audioBuffer) => {
+            if (!audioBuffer || runId !== state.speechRunId) {
+              resolve();
+              return;
+            }
+            if (state.audioCtx.state === 'suspended') {
+              state.audioCtx.resume().catch(() => undefined);
+            }
+            const source = state.audioCtx.createBufferSource();
+            source.buffer = audioBuffer;
+            source.connect(state.audioCtx.destination);
+            let settled = false;
+            const cleanup = () => {
+              if (settled) return;
+              settled = true;
+              if (state.activeStopAudio === stopSource) {
+                state.activeStopAudio = null;
+              }
+              resolve();
+            };
+            const stopSource = () => {
+              try {
+                source.stop(0);
+                source.disconnect();
+              } catch {
+                // Already stopped
+              }
+              cleanup();
+            };
+            state.activeStopAudio = stopSource;
+            source.onended = cleanup;
+            source.start(0);
+          })
+          .catch(() => {
+            playWavWithHtmlAudio(wavBlob, runId).then(resolve).catch(reject);
+          });
+        return;
+      }
+
+      playWavWithHtmlAudio(wavBlob, runId).then(resolve).catch(reject);
+    });
+  }
+
+  function playWavWithHtmlAudio(wavBlob, runId) {
+    return new Promise((resolve, reject) => {
+      if (runId !== state.speechRunId) {
+        resolve();
+        return;
+      }
+      const objectUrl = URL.createObjectURL(wavBlob);
+      const audio = new Audio(objectUrl);
+      let settled = false;
+      const cleanup = () => {
+        if (settled) return;
+        settled = true;
+        if (state.activeStopAudio === stopHtmlAudio) {
+          state.activeStopAudio = null;
+        }
+        URL.revokeObjectURL(objectUrl);
+        resolve();
+      };
+      const stopHtmlAudio = () => {
+        try {
+          audio.pause();
+          audio.currentTime = 0;
+        } catch {
+          // Ignore
+        }
+        cleanup();
+      };
+      state.activeStopAudio = stopHtmlAudio;
+      audio.onended = cleanup;
+      audio.onerror = () => {
+        cleanup();
+        reject(new Error('Lecture audio impossible.'));
+      };
+      audio.play().catch((err) => {
+        if (!settled) {
+          settled = true;
+          if (state.activeStopAudio === stopHtmlAudio) {
+            state.activeStopAudio = null;
+          }
+          URL.revokeObjectURL(objectUrl);
+          reject(err);
+        }
+      });
+    });
+  }
+
   function stopSpeaking() {
+    state.speechRunId += 1;
+    if (typeof state.activeStopAudio === 'function') {
+      const stopFn = state.activeStopAudio;
+      state.activeStopAudio = null;
+      stopFn();
+    }
     if ('speechSynthesis' in window) {
       window.speechSynthesis.cancel();
     }
     state.isSpeaking = false;
     updateStatusLine();
+    updatePiperUI();
   }
 
-  function speakText(rawText) {
-    if (!state.settings.voiceEnabled || !('speechSynthesis' in window)) return;
-    const clean = sanitizeTextForSpeech(rawText);
-    if (!clean) return;
+  function speakWithBrowserSynthesis(cleanText, runId) {
+    if (!('speechSynthesis' in window) || !cleanText || runId !== state.speechRunId) {
+      state.isSpeaking = false;
+      updateStatusLine();
+      updatePiperUI();
+      return;
+    }
 
     window.speechSynthesis.cancel();
-    state.isSpeaking = false;
 
-    const utterance = new SpeechSynthesisUtterance(clean);
+    const utterance = new SpeechSynthesisUtterance(cleanText);
     utterance.rate = 0.92;
     utterance.pitch = 1;
     utterance.lang = 'fr-CA';
@@ -618,19 +1000,102 @@
     }
 
     utterance.onstart = () => {
+      if (runId !== state.speechRunId) {
+        window.speechSynthesis.cancel();
+        return;
+      }
       state.isSpeaking = true;
       updateStatusLine();
+      updatePiperUI();
     };
     utterance.onend = () => {
-      state.isSpeaking = false;
-      updateStatusLine();
+      if (runId === state.speechRunId) {
+        state.isSpeaking = false;
+        updateStatusLine();
+        updatePiperUI();
+      }
     };
     utterance.onerror = () => {
-      state.isSpeaking = false;
-      updateStatusLine();
+      if (runId === state.speechRunId) {
+        state.isSpeaking = false;
+        updateStatusLine();
+        updatePiperUI();
+      }
     };
 
     window.speechSynthesis.speak(utterance);
+  }
+
+  async function speakWithPiper(cleanText, runId) {
+    const chunks = splitTextIntoSpeechChunks(cleanText);
+    if (chunks.length === 0) return;
+
+    state.isSpeaking = true;
+    updateStatusLine();
+    updatePiperUI();
+
+    let playedAnyChunk = false;
+    try {
+      const mod = await loadPiperModule();
+      if (runId !== state.speechRunId) return;
+
+      const storedList = typeof mod.stored === 'function' ? await mod.stored() : [];
+      if (!Array.isArray(storedList) || !storedList.includes(PIPER_VOICE_ID)) {
+        state.piper.status = 'not_downloaded';
+        state.settings.piperReadyHint = false;
+        updatePiperUI();
+        if (runId === state.speechRunId) {
+          speakWithBrowserSynthesis(cleanText, runId);
+        }
+        return;
+      }
+
+      for (let i = 0; i < chunks.length; i += 1) {
+        if (runId !== state.speechRunId) return;
+        const wavBlob = await mod.predict({
+          text: chunks[i],
+          voiceId: PIPER_VOICE_ID,
+        });
+        if (runId !== state.speechRunId) return;
+        await playWavBlob(wavBlob, runId);
+        playedAnyChunk = true;
+      }
+
+      if (runId === state.speechRunId) {
+        state.isSpeaking = false;
+        updateStatusLine();
+        updatePiperUI();
+      }
+    } catch (err) {
+      console.warn('Piper WASM indisponible, repli sur speechSynthesis :', err);
+      if (runId === state.speechRunId) {
+        if (!playedAnyChunk) {
+          speakWithBrowserSynthesis(cleanText, runId);
+        } else {
+          state.isSpeaking = false;
+          updateStatusLine();
+          updatePiperUI();
+        }
+      }
+    }
+  }
+
+  function speakText(rawText, options = {}) {
+    const ignoreVoiceToggle = Boolean(options.ignoreVoiceToggle);
+    if (!ignoreVoiceToggle && !state.settings.voiceEnabled) return;
+
+    const clean = sanitizeTextForSpeech(rawText);
+    if (!clean) return;
+
+    stopSpeaking();
+    const runId = state.speechRunId;
+
+    const engine = options.forceEngine || state.settings.voiceEngine || 'browser';
+    if (engine === 'piper' && state.piper.status === 'ready') {
+      speakWithPiper(clean, runId);
+    } else {
+      speakWithBrowserSynthesis(clean, runId);
+    }
   }
 
   // ---- Speech Recognition (fr-FR, continuous + interim directly in input, second tap stops) ----
@@ -894,6 +1359,7 @@
     if (state.isListening) {
       stopListening();
     }
+    unlockAudioForSpeech();
     stopSpeaking();
     hideError();
 
@@ -968,6 +1434,8 @@
       !state.settings.model || OBSOLETE_MODELS.has(state.settings.model)
         ? 'gemini-3.5-flash-lite'
         : state.settings.model;
+    updatePiperUI();
+    refreshPiperStoredStatus();
     logAndRenderVoices();
     openModal(els.settingsModal);
   }
@@ -1043,7 +1511,46 @@
     els.installProfileBtn.addEventListener('click', handleInstallClick);
     els.headerAvatarBtn.addEventListener('click', () => switchTab('profile'));
 
+    els.voiceEngineSelect.addEventListener('change', () => {
+      stopSpeaking();
+      const chosen = els.voiceEngineSelect.value;
+      if (chosen === 'piper' && state.piper.status === 'ready') {
+        state.settings.voiceEngine = 'piper';
+      } else {
+        state.settings.voiceEngine = 'browser';
+        els.voiceEngineSelect.value = 'browser';
+      }
+      saveJson(STORAGE_KEYS.settings, state.settings);
+      updatePiperUI();
+    });
+
+    els.piperDownloadBtn.addEventListener('click', () => {
+      unlockAudioForSpeech();
+      downloadPiperModel();
+    });
+
+    els.piperTestBtn.addEventListener('click', () => {
+      unlockAudioForSpeech();
+      if (state.isSpeaking) {
+        stopSpeaking();
+        return;
+      }
+      const chosen =
+        els.voiceEngineSelect.value === 'piper' && state.piper.status === 'ready'
+          ? 'piper'
+          : 'browser';
+      speakText("Coucou mon amour, c'est Pauline ! Ma voix est prête pour discuter avec toi.", {
+        ignoreVoiceToggle: true,
+        forceEngine: chosen,
+      });
+    });
+
+    els.piperDeleteBtn.addEventListener('click', () => {
+      deletePiperModel();
+    });
+
     els.voiceToggleBtn.addEventListener('click', () => {
+      unlockAudioForSpeech();
       state.settings.voiceEnabled = !state.settings.voiceEnabled;
       saveJson(STORAGE_KEYS.settings, state.settings);
       updateVoiceButtonUI();
@@ -1094,6 +1601,7 @@
     });
 
     els.micBtn.addEventListener('click', () => {
+      unlockAudioForSpeech();
       if (state.isListening) {
         stopListening();
       } else {
@@ -1108,8 +1616,13 @@
       state.settings.userName = els.prenomInput.value.trim();
       state.settings.apiKey = els.geminiKeyInput.value.trim();
       state.settings.model = els.modelSelect.value;
+      state.settings.voiceEngine =
+        els.voiceEngineSelect.value === 'piper' && state.piper.status === 'ready'
+          ? 'piper'
+          : 'browser';
       saveJson(STORAGE_KEYS.settings, state.settings);
       updateApiKeyBanner();
+      updatePiperUI();
       closeModal(els.settingsModal);
     });
 
@@ -1149,8 +1662,16 @@
   }
 
   function migrateSettings() {
+    let changed = false;
     if (!state.settings.model || OBSOLETE_MODELS.has(state.settings.model)) {
       state.settings.model = 'gemini-3.5-flash-lite';
+      changed = true;
+    }
+    if (state.settings.voiceEngine !== 'piper' && state.settings.voiceEngine !== 'browser') {
+      state.settings.voiceEngine = 'browser';
+      changed = true;
+    }
+    if (changed) {
       saveJson(STORAGE_KEYS.settings, state.settings);
     }
   }
@@ -1167,6 +1688,8 @@
     renderMessages();
     renderMemories();
     logAndRenderVoices();
+    updatePiperUI();
+    refreshPiperStoredStatus();
     bindEvents();
   }
 

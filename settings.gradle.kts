@@ -19,6 +19,31 @@ dependencyResolutionManagement {
   repositories {
     google()
     mavenCentral()
+    ivy {
+      url = uri("https://github.com/k2-fsa/sherpa-onnx/releases/download")
+      patternLayout {
+        artifact("v[revision]/[module]-[revision].[ext]")
+      }
+      metadataSources {
+        artifact()
+      }
+      content {
+        includeModule("com.k2fsa.sherpa.onnx", "sherpa-onnx")
+      }
+    }
+    ivy {
+      url = uri("https://huggingface.co/csukuangfj/sherpa-onnx-libs/resolve/main/android/aar")
+      patternLayout {
+        artifact("[revision]/[module]-[revision].[ext]")
+        artifact("[module]-[revision].[ext]")
+      }
+      metadataSources {
+        artifact()
+      }
+      content {
+        includeModule("com.k2fsa.sherpa.onnx", "sherpa-onnx")
+      }
+    }
   }
 }
 

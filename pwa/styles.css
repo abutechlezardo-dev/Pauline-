@@ -866,3 +866,76 @@ body {
   line-height: 1.5;
   color: var(--text);
 }
+
+/* Piper WASM Voice Settings */
+.piper-section {
+  margin-top: 4px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.piper-header-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.piper-status-pill {
+  flex-shrink: 0;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+}
+
+.piper-status-pill.ready {
+  background: rgba(232, 122, 93, 0.2);
+  color: var(--primary-strong);
+  border-color: rgba(232, 122, 93, 0.45);
+}
+
+.piper-status-pill.error {
+  background: rgba(229, 83, 83, 0.18);
+  color: #ffb4b4;
+  border-color: rgba(229, 83, 83, 0.45);
+}
+
+.piper-progress-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.piper-progress-track {
+  width: 100%;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.09);
+  overflow: hidden;
+}
+
+.piper-progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--primary), var(--primary-strong));
+  transition: width 0.2s ease;
+}
+
+.piper-actions-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.danger-ghost-btn {
+  border-color: rgba(255, 138, 138, 0.35);
+  color: #ffb4b4;
+}
